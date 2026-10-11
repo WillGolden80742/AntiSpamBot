@@ -1,0 +1,41 @@
+# Deps
+node_modules/
+.pnpm-store/
+
+# Env / segredos — NUNCA commitar
+.env
+.env.*
+*.key
+*.pem
+backups/*/env.keys.txt
+
+# Banco local (SQLite runtime)
+db/*.db
+db/*.db-shm
+db/*.db-wal
+db/grouphelp.db*
+
+# Modelos grandes gerados (re-treine com bin/treinar.js)
+db/fasttext/spam.bin
+db/fasttext/spam.ftz
+db/fasttext/spam.vec
+db/bayes.json
+# mantém stats + corpus no repo
+!db/fasttext/stats.json
+
+# Logs
+log/
+*.log
+
+# Backups locais
+backups/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# graphify cache (mantém graph.json principal, ignora cache pesado)
+graphify-out/cache/
+graphify-out/2026-*/

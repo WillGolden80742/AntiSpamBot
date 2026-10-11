@@ -1,0 +1,11 @@
+{
+  "em": "2026-10-11T19:26:33.038Z",
+  "nSpam": 10000,
+  "nHam": 10000,
+  "treino": 16000,
+  "teste": 4000,
+  "fpHam": 0,
+  "bayesAcc": "3985/4000",
+  "bayesFp": 14,
+  "fasttextTest": "N\t4000\nP@1\t1\nR@1\t1"
+}

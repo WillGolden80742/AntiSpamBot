@@ -1,0 +1,19 @@
+{
+  "name": "grouphelp-clone",
+  "version": "1.0.0",
+  "description": "Clone Group Help Telegram — Bot Node.js + Painel localhost Material Design 3 (MDI, sem emojis)",
+  "type": "module",
+  "main": "bot.js",
+  "scripts": {
+    "bot": "node bot.js",
+    "db:seed": "node db/seeds.js",
+    "db:init": "node db/seeds.js",
+    "sem:treinar": "node bin/treinar.js",
+    "dev": "node bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-telegram-bot-api": "^0.66.0",
+    "better-sqlite3": "^11.2.1"
+  }
+}
