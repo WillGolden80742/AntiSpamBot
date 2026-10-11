@@ -1,42 +1,48 @@
-# Deps
-node_modules/
-.pnpm-store/
-
-# Env / segredos — NUNCA commitar
+# Segredos e ambiente
 .env
 .env.*
 !.env.example
-*.key
-*.pem
-backups/*/env.keys.txt
 
-# Banco local (SQLite runtime)
-db/*.db
+# Dependências
+node_modules/
+
+# Banco de produção (grupos, warns, eventos — dados privados)
+db/grouphelp.db
+db/grouphelp.db-shm
+db/grouphelp.db-wal
 db/*.db-shm
 db/*.db-wal
-db/grouphelp.db*
 
-# Modelos grandes gerados (re-treine com bin/treinar.js)
-db/fasttext/spam.bin
+# Modelos pesados (regenere com: node bin/treinar.js — requer binário fasttext)
 db/fasttext/spam.ftz
 db/fasttext/spam.vec
-db/bayes.json
-# mantém stats + corpus no repo
-!db/fasttext/stats.json
+db/fasttext/spam.bin
+*.ftz
+*.vec
+*.bin
 
-# Logs
-log/
+# Logs de runtime
+log/*.log
 *.log
 
-# Backups locais
-backups/
+# Backups locais (código + banco)
+backups/*/
+!backups/.gitkeep
 
-# OS / editor
+# Área de trabalho do corpus (scripts .py versionados; dados/cache ignorados)
+Dado novos/*.json
+Dado novos/backup/
+Dado novos/cache_trans_*.json
+Dado novos/__pycache__/
+Dado novos/*.log
+__pycache__/
+
+# Grafo de código local (regenere com: graphify update .)
+graphify-out/
+
+# Sistema / editor
 .DS_Store
 Thumbs.db
 .vscode/
-.idea/
-
-# graphify cache (mantém graph.json principal, ignora cache pesado)
-graphify-out/cache/
-graphify-out/2026-*/
+*.swp
+*.swo

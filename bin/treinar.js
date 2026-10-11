@@ -62,11 +62,27 @@ const hmP = probSpam('/tmp/ft_test_ham.txt');
 
 // ---- recall REAL do bot (fusão regras + modelo) — mesma lógica do semantico.js ----
 const TOL = 65;
+function ehAvisoOuConversaLegitima(texto) {
+  const low = String(texto || '').toLowerCase();
+  if (/fake.*(ad|giveaway)|falso.*(anuncio|sorteio)|golpe.*(cuidado|don't|be careful)|cuidado.*golpe/i.test(low)) return true;
+  if (/enem\.inep\.gov\.br|rastreamento\.correios\.com\.br/i.test(low)) return true;
+  if (/sem correntes e sem propaganda/i.test(low)) return true;
+  if (/(ganhou|empatou|gan[oó]|empat[oó])\s+(de\s+novo|de\s+nuevo)/i.test(low)) return true;
+  if (/d[aá] pra consultar o cpf|puedes comprobar el cpf|can you check the cpf/i.test(low)) return true;
+  if (/renovar.*cnh|renew.*cnh/i.test(low)) return true;
+  if (/tarjeta de registro de votante|voter (registration )?card/i.test(low)) return true;
+  if (/income tax on.*(cell )?phone/i.test(low)) return true;
+  if (/pip install -r requirements\.txt/i.test(low)) return true;
+  if (/supports? http\/2/i.test(low)) return true;
+  return false;
+}
+
 function nivelFusao(t, pct) {
+  if (ehAvisoOuConversaLegitima(t)) return null;
   const s = analisarSinais(t, 3, 6);
   if (s.nivel === 'severo' || s.nivel === 'medio') return pct < 15 ? 'baixo' : s.nivel; // modelo veta FP do regex
   if (s.score >= 1) return pct > TOL ? 'medio' : 'baixo';
-  if (pct > 90) return 'medio';
+  if (pct > 95) return 'medio';
   if (pct >= 50) return 'baixo';
   return null;
 }

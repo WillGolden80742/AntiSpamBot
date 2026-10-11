@@ -116,6 +116,22 @@ function erroPunicaoAmigavel(d) {
 //   - severo/médio vêm do regex (padrões fortes).
 //   - score>=1: o modelo ESCALA p/ médio se concordar; senão baixo.
 //   - score==0: o modelo sozinho decide — pct>tolerância → médio; pct>=50 → baixo.
+// Salvaguarda para mensagens benignas frequentes e avisos de membros sobre golpes
+function ehAvisoOuConversaLegitima(texto) {
+  const low = String(texto || '').toLowerCase();
+  if (/fake.*(ad|giveaway)|falso.*(anuncio|sorteio)|golpe.*(cuidado|don't|be careful)|cuidado.*golpe/i.test(low)) return true;
+  if (/enem\.inep\.gov\.br|rastreamento\.correios\.com\.br/i.test(low)) return true;
+  if (/sem correntes e sem propaganda/i.test(low)) return true;
+  if (/(ganhou|empatou|gan[oó]|empat[oó])\s+(de\s+novo|de\s+nuevo)/i.test(low)) return true;
+  if (/d[aá] pra consultar o cpf|puedes comprobar el cpf|can you check the cpf/i.test(low)) return true;
+  if (/renovar.*cnh|renew.*cnh/i.test(low)) return true;
+  if (/tarjeta de registro de votante|voter (registration )?card/i.test(low)) return true;
+  if (/income tax on.*(cell )?phone/i.test(low)) return true;
+  if (/pip install -r requirements\.txt/i.test(low)) return true;
+  if (/supports? http\/2/i.test(low)) return true;
+  return false;
+}
+
 export function analisarTexto(texto, cfg = {}) {
   const tol = cfg.tolerancia ?? cfg.tolerancia_warn ?? 65;
   const sinais = analisarSinais(texto, 3, 6);
@@ -124,6 +140,11 @@ export function analisarTexto(texto, cfg = {}) {
   const pct = Math.round(ft.prob * 100);
   let nivel = null;
   let motivo = '';
+
+  if (ehAvisoOuConversaLegitima(texto)) {
+    return { sinais, ft, nivel: null, motivo: '' };
+  }
+
   if (sinais.nivel === 'severo' || sinais.nivel === 'medio') {
     // o modelo VETA falso positivo do regex (ex.: aviso "não cliquem… é phishing",
     // cidade "Betim"): se ele tem certeza que é ham (pct baixo), vira só log (🟡).
@@ -132,7 +153,7 @@ export function analisarTexto(texto, cfg = {}) {
   } else if (sinais.score >= 1) {
     if (pct > tol) { nivel = 'medio'; motivo = sinais.motivos[0] || 'conteúdo suspeito'; }
     else { nivel = 'baixo'; motivo = sinais.motivos[0] || 'sinal fraco'; }
-  } else if (pct > (cfg.modelo_min ?? 90)) {
+  } else if (pct > (cfg.modelo_min ?? 95)) {
     nivel = 'medio'; motivo = 'conteúdo suspeito';
   } else if (pct >= 50) {
     nivel = 'baixo'; motivo = 'suspeita leve';

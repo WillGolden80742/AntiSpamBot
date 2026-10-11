@@ -19,7 +19,7 @@ export function normalizar(s) {
 // Domínios que NUNCA são golpe: se algum aparece, os sinais de phishing/golpe
 // social (phish:true) são ignorados — ex.: "Receita Federal: https://www.gov.br/…".
 const DOMINIOS_OK = [
-  'gov.br', 'bcb.gov.br', 'ebc.com.br', 'wikipedia.org', 'github.com', 'stackoverflow.com',
+  'gov.br', 'inep.gov.br', 'correios.com.br', 'bcb.gov.br', 'ebc.com.br', 'wikipedia.org', 'github.com', 'stackoverflow.com',
   'python.org', 'mozilla.org', 'git-scm.com', 'nodejs.org', 'react.dev', 'code.visualstudio.com',
   'postgresql.org', 'docker.com', 'google.com', 'youtube.com', 'youtu.be', 'instagram.com',
   'facebook.com', 'spotify.com', 'netflix.com', 'imdb.com', 'maps.google.com',
@@ -66,6 +66,11 @@ const SINAIS = [
   // ---- peso 3: falso depoimento de lucro + perfil trader ----
   { re: /saquei|saque.*lucro|sacar.*lucro|lucro.*(saquei|sacar|retirada)/, peso: 3, motivo: 'golpe: falso lucro' },
   { re: /@\w*(trading|trader|forex|invest|sinais|bet|tigrinho|cassino)\w*|trading|forex/, peso: 2, motivo: 'golpe: trader' },
+  // ---- peso 4: aluguel de conta (golpe/lavagem) ----
+  { re: /aluga.{0,25}conta|conta.{0,40}corretora|subindo.{0,25}por conta|nao quero login nem senha/, peso: 4, motivo: 'golpe: aluguel de conta', phish: true },
+  { re: /quero \d{1,2}%|me chama no pv|chama pv|chama no privado/, peso: 2, motivo: 'golpe: aluguel de conta' },
+  // ---- peso 4: depoimento falso de trading ----
+  { re: /decision can open the door|another source of income|valuable experience|withdrawal of|made over \$|legitimately exceptional|financial freedom/, peso: 4, motivo: 'golpe: depoimento falso', phish: true },
   // ---- peso 2: dinheiro / robô / divulgação ----
   { re: /r\$\s?\d+\s*(mil|por dia|de lucro|garantido|facil|na hora)|pix.*(saque|receb)|deposito minimo|saque.*(imediato|na hora)/, peso: 2, motivo: 'dinheiro fácil' },
   { re: /bonus.*(200|300|100)%|giros gratis|rodadas gratis|deposito.*dobrado/, peso: 2, motivo: 'bônus de aposta' },
@@ -83,8 +88,35 @@ const SINAIS = [
   // ---- peso 1: fracos ----
   // (link genérico NÃO conta sozinho: só link suspeito dispara — encurtador,
   //  domínio estranho ou t.me, já tratados acima)
-  { re: /so hoje|ultimas vagas|corra|nao perca|acaba.*hoje/, peso: 1, motivo: 'urgência' },
+  { re: /so hoje|ultimas vagas|corra|nao perca|acaba.*hoje|se acaba hoy|ends today|date prisa/, peso: 1, motivo: 'urgência' },
   { re: /💰|🤑|💸|💵/, peso: 1, motivo: 'emoji de dinheiro' },
+
+  // ---- Multilíngue (ES / EN) e novos sinais de alta precisão ----
+  { re: /hospitalizado|hospitalized/, peso: 4, motivo: 'golpe: pedido de dinheiro', phish: true },
+  { re: /transferencia por (error|engano)|transfer by mistake/, peso: 4, motivo: 'golpe: pedido de dinheiro', phish: true },
+  { re: /ayuda gubernamental|prestaci[oó]n gubernamental|government benefit/, peso: 4, motivo: 'golpe: benefício falso', phish: true },
+  { re: /anuncia aqu[ií]|advertise here|anuncie aqui|\d+\s*personas por semana|people per week/, peso: 2, motivo: 'divulgação' },
+  { re: /v[ií]deo prohibido|forbidden video/, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /se filtr[oó] (el )?v[ií]deo|video.*was leaked|was leaked.*video/, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /duplicado el stall|en el cohete|on the rocket/, peso: 4, motivo: 'casa de apostas: jogo crash' },
+  { re: /clothing catalog|cat[aá]logo de ropa/, peso: 2, motivo: 'divulgação' },
+  { re: /make \$\d+ a week|ganar \$\d+ por semana/, peso: 4, motivo: 'pirâmide: renda fácil' },
+  { re: /sin tonter[ií]as|no fluff/, peso: 2, motivo: 'divulgação' },
+  { re: /esto es lo que buscabas|here'?s what you were looking for/, peso: 2, motivo: 'divulgação' },
+  { re: /motorcycle seized|seized for r\$/, peso: 4, motivo: 'golpe: venda falsa' },
+  { re: /odds?\s*\d+|odd turbinada/i, peso: 2, motivo: 'casa de apostas' },
+  { re: /enlace en bio|link in bio/i, peso: 2, motivo: 'divulgação' },
+  { re: /se[nñ]ales vip|vip (crypto |betting )?signals|100% win rate/i, peso: 2, motivo: 'robô de sinais' },
+  { re: /adult videos free|v[ií]deos para adultos|18\+ only|solo \+18/i, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /vazou.*novinha|novinha.*bairro/i, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /recupero seu dinheiro perdido em golpes|taxa antecipada/i, peso: 4, motivo: 'golpe: recuperação falsa' },
+  { re: /assistindo v[ií]deos/i, peso: 4, motivo: 'pirâmide: renda fácil' },
+  { re: /leil[aã]o da receita/i, peso: 4, motivo: 'golpe: venda falsa' },
+  { re: /gestor de tr[aá]fego/i, peso: 2, motivo: 'divulgação' },
+  { re: /meu grupo de vagas j[aá] tem mais de/i, peso: 2, motivo: 'divulgação' },
+  { re: /programa que hackeia|hackeia instagram/i, peso: 3, motivo: 'malware: app falso' },
+  { re: /d[eé]bito autom[aá]tico n[aã]o realizado no inter/i, peso: 4, motivo: 'phishing: conta bloqueada', phish: true },
+  { re: /compartilha meu perfil que eu compartilho/i, peso: 2, motivo: 'divulgação' },
 ];
 
 function temCaps(texto) {
@@ -110,6 +142,11 @@ export function analisarSinais(texto, limiarMedio = 3, limiarSevero = 6) {
   }
   if (temCaps(texto)) { score += 1; motivos.push('caixa alta'); }
   if (/(.)\1{4,}/.test(String(texto || '').toLowerCase())) { score += 1; motivos.push('caracteres repetidos'); }
+  // Flood de menções: @perfil repetido em massa (prints: 12-20 marcações por msg)
+  const mencoes = (String(texto || '').match(/@[a-z0-9_]{3,}/gi) || []).length;
+  if (mencoes >= 12) { score += 6; motivos.push('flood de marcação'); }
+  else if (mencoes >= 8) { score += 4; motivos.push('flood de marcação'); }
+  else if (mencoes >= 5) { score += 2; motivos.push('muitas marcações'); }
   // Metadados dos links: cada link suspeito vira um sinal forte.
   const links = analisarLinks(texto);
   for (const l of links.suspeitos) {
