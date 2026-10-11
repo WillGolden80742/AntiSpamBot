@@ -7,12 +7,10 @@ export const extrairLinks = _extrairLinks;
 export function normalizar(s) {
   let t = String(s || '').toLowerCase();
   try { t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch {}
-  // leet SEM @ e $: eles quebrariam os regex de menção (/@trader/) e dinheiro (/r\$/)
-  // e SÓ troca dígito que está colado em letra (t1gr1nho→tigrinho), sem estragar
-  // números soltos (R$500 continua R$500, não vira "r$soo").
-  const leet = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', 8: 'b', '!': 'i', '|': 'i', '+': 't' };
+  // leet SEM @ $ ! | +: só DÍGITOS colados em letra (t1gr1nho→tigrinho).
+  // Símbolos ficam intactos p/ não quebrar "+18", "!!!", "$", "@trader".
+  const leet = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', 8: 'b' };
   t = t.replace(/(?<=[a-z])[0134578]|[0134578](?=[a-z])/g, (c) => leet[c] || c);
-  t = t.replace(/[!|+]/g, (c) => leet[c] || c);
   t = t.replace(/[\u200b-\u200f\ufeff]/g, '');
   t = t.replace(/(.)\1{3,}/g, '$1$1');
   return t;
@@ -52,17 +50,33 @@ const SINAIS = [
   { re: /airdrop|staking.*%|carteira.*sincroniz|cripto.*lucro/, peso: 4, motivo: 'golpe: cripto', phish: true },
   // ---- peso 3-4: adulto / malware / vendas falsas ----
   { re: /vazad|onlyfans|pack.*18|conteudo adulto|fotos quentes|acompanhantes/, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /vazou|novinha|video proibido|nudes|privacy-/, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /\+18\b|18\+|conteudo (adulto|sensual)|conteudo \+18/, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /fique rico|ficar rico|curso milagros|enriquec|cotas de investimento|retorno (semanal|diario|mensal) (fixo|garantido)|renda (semanal|mensal) (fixa|garantida)|metodo secreto|metodo infalivel|metodo (que|para) (enriquecer|funciona)/, peso: 4, motivo: 'pirâmide: lucro garantido' },
+  { re: /transferencia por engano|pix.*(devolv|engano)|(cunhado|filho|pai|mae).*(internad|hospital)|preciso de um pix/, peso: 4, motivo: 'golpe: pedido de dinheiro', phish: true },
+  { re: /codigo por engano|enviei.*por engano|mandei.*por engano|pode me passar|me passa o codigo/, peso: 4, motivo: 'golpe: pedido de dinheiro', phish: true },
+  { re: /sorteio de (um )?(iphone|celular|premio|carro|pix)|clique e participe|participe e concorra|concorra a (um|uma)/, peso: 4, motivo: 'golpe: sorteio falso', phish: true },
+  { re: /selecionado.*(beneficio|premio)|beneficio do governo|comenta (eu|quero)|clique para (resgatar|receber)/, peso: 4, motivo: 'golpe: seleção falsa', phish: true },
   { re: /whatsapp gb|gbwhatsapp|quem visitou seu perfil|internet gratis.*(baixa|app|download)/, peso: 3, motivo: 'malware: app falso' },
   { re: /\.apk\b|baixe.*apk|apk.*liberado/, peso: 3, motivo: 'malware: APK' },
   { re: /cnh sem prova|seguidores baratos|conta.*vitalicia|diploma sem/, peso: 3, motivo: 'golpe: venda falsa' },
+  { re: /moto apreendid|carro apreendid|veiculo apreendid|apreendid.*documentacao|leilao de (moto|carro)/, peso: 4, motivo: 'golpe: venda falsa' },
+  { re: /apreensao|bens apreendid|leilao (da policia|federal|do governo|do detran)|notebook de apreensao/, peso: 4, motivo: 'golpe: venda falsa' },
+  { re: /bac ?bo|bacbo|soltando muito|ta soltando/, peso: 2, motivo: 'casa de apostas' },
   // ---- peso 3: falso depoimento de lucro + perfil trader ----
   { re: /saquei|saque.*lucro|sacar.*lucro|lucro.*(saquei|sacar|retirada)/, peso: 3, motivo: 'golpe: falso lucro' },
   { re: /@\w*(trading|trader|forex|invest|sinais|bet|tigrinho|cassino)\w*|trading|forex/, peso: 2, motivo: 'golpe: trader' },
   // ---- peso 2: dinheiro / robô / divulgação ----
-  { re: /r\$\s?\d|pix.*(saque|receb)|deposito minimo|saque.*(imediato|na hora)/, peso: 2, motivo: 'dinheiro fácil' },
+  { re: /r\$\s?\d+\s*(mil|por dia|de lucro|garantido|facil|na hora)|pix.*(saque|receb)|deposito minimo|saque.*(imediato|na hora)/, peso: 2, motivo: 'dinheiro fácil' },
   { re: /bonus.*(200|300|100)%|giros gratis|rodadas gratis|deposito.*dobrado/, peso: 2, motivo: 'bônus de aposta' },
   { re: /sinais.*(vip|grupo)|robo.*(aposta|trader|sinais)|assertividade.*%|taxa.*acerto.*%/, peso: 2, motivo: 'robô de sinais' },
   { re: /entra no meu grupo|meu canal|me segue|siga.*perfil|divulgo.*canal|promocao imperdivel/, peso: 2, motivo: 'divulgação' },
+  { re: /anuncie aqui|alcance .* pessoas|anuncio (pago|patrocinado)|espaco para anuncio/, peso: 2, motivo: 'divulgação' },
+  { re: /cashback.*(bet|aposta|cassino)|bet ?nacional|bet ?fair|bet ?ano|bet7k|bet[0-9]k/, peso: 2, motivo: 'casa de apostas' },
+  { re: /tigre ?vip|tigrevip|cashback|saque.*vip|entrar? no vip/, peso: 2, motivo: 'casa de apostas' },
+  { re: /link na bio|link da bio|link nos comentarios|na bio|l\.i\.n\.k/, peso: 2, motivo: 'divulgação' },
+  { re: /packs? (novos|novas|novo)|tenho packs?|acesse os packs?/, peso: 4, motivo: 'conteúdo adulto' },
+  { re: /avo faleceu|preciso de ajuda com um pix|pix urgente|me ajuda com um pix/, peso: 4, motivo: 'golpe: pedido de dinheiro', phish: true },
   { re: /trabalhe.*casa|vaga.*(copiar|colar|digitar)|ganhar.*sem sair de casa/, peso: 2, motivo: 'falsa vaga' },
   { re: /emprestimo.*aprovado|credito.*liberado|limite.*liberado/, peso: 2, motivo: 'crédito falso' },
   { re: /iphone.*999|preco.*metade|oferta.*so hoje/, peso: 2, motivo: 'oferta falsa' },

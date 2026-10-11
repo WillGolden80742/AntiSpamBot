@@ -1,11 +1,30 @@
 {
-  "em": "2026-10-11T19:26:33.038Z",
+  "em": "2026-10-11T20:52:53.134Z",
+  "treino": {
+    "spam": 10000,
+    "ham": 11108,
+    "total": 21108
+  },
+  "teste": {
+    "spam": 10000,
+    "ham": 10000,
+    "total": 20000
+  },
+  "fasttextTest": "N\t20000\nP@1\t0.994\nR@1\t0.994",
+  "fusao": {
+    "spamPego": 10000,
+    "spamTotal": 10000,
+    "pct": 100,
+    "escapou": 0,
+    "hamPunido": 0,
+    "hamLog": 36
+  },
+  "bayes": {
+    "acerto": 19692,
+    "total": 20000,
+    "fpHam": 242
+  },
   "nSpam": 10000,
-  "nHam": 10000,
-  "treino": 16000,
-  "teste": 4000,
-  "fpHam": 0,
-  "bayesAcc": "3985/4000",
-  "bayesFp": 14,
-  "fasttextTest": "N\t4000\nP@1\t1\nR@1\t1"
+  "nHam": 11108,
+  "fpHam": 0
 }

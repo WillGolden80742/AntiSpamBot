@@ -87,6 +87,7 @@ export function getSemCfg(gid) {
     log_no_admin_grupo: raw.log_no_admin_grupo ?? true,
     punir_staff: raw.punir_staff ?? false,
     tolerancia: (() => { const v = Number(raw.tolerancia ?? raw.tolerancia_warn); return Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 65; })(),
+    modelo_min: (() => { const v = Number(raw.modelo_min); return Number.isFinite(v) ? Math.min(100, Math.max(50, Math.round(v))) : 90; })(),
   };
 }
 
@@ -131,7 +132,7 @@ export function analisarTexto(texto, cfg = {}) {
   } else if (sinais.score >= 1) {
     if (pct > tol) { nivel = 'medio'; motivo = sinais.motivos[0] || 'conteúdo suspeito'; }
     else { nivel = 'baixo'; motivo = sinais.motivos[0] || 'sinal fraco'; }
-  } else if (pct > tol) {
+  } else if (pct > (cfg.modelo_min ?? 90)) {
     nivel = 'medio'; motivo = 'conteúdo suspeito';
   } else if (pct >= 50) {
     nivel = 'baixo'; motivo = 'suspeita leve';
