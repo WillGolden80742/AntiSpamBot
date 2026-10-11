@@ -5,6 +5,7 @@ node_modules/
 # Env / segredos — NUNCA commitar
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 backups/*/env.keys.txt
