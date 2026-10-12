@@ -1,6 +1,6 @@
 // Hub enxuto: 2 motores (alfabetos + antispam semântico, 0 IA).
 // Antispam é o pai de regras (texto) e whitelist (perdão).
-// Menu (open:) -> hub (mod:) -> [mod_alfa: | ai: -> [wl: | cens_ver/editar | sem_treinar]].
+// Menu (open:) -> hub (mod:) -> [mod_alfa: | ai: -> [wl: | cens_ver/editar]].
 // Legado: `mod:gid` antigo cai no hub; callbacks ia_* antigas são ignoradas.
 import { logEvent } from '../models/group.js';
 import { settingsKeyboard } from '../helpers/keyboards.js';
@@ -9,7 +9,7 @@ import { setPendente } from '../helpers/pending.js';
 import { getWhitelist, painelWhitelist, removerWlItem } from '../helpers/whitelist.js';
 import { getRegrasTexto } from '../helpers/regras.js';
 import { getProgressivoCfg, ALFA_NOME, EXCETO_KEYS, normExcecoes, normSelecao, selecaoAtiva } from './alfabetos.js';
-import { getSemCfg, saveSemCfg, painelSemantico, painelTolerancia, painelTolNumeros, varreduraGrupo, retreinar } from './semantico.js';
+import { getSemCfg, saveSemCfg, painelSemantico, painelTolerancia, painelTolNumeros, varreduraGrupo } from './semantico.js';
 import { db } from '../../config/database.js';
 
 const META = {
@@ -575,12 +575,6 @@ export function registerCallbacks(bot) {
           await bot.sendMessage(q.message.chat.id, '▶️ Disparo falhou sem quebrar nada. Tente de novo.').catch(() => {});
         }
         const p = painelSemantico(gid); await edit(p.text, p.reply_markup).catch(() => {});
-        return;
-      } else if (data.startsWith('sem_treinar:')) {
-        const gid = data.split(':')[1];
-        if (!(await canEdit(bot, q, gid))) return;
-        await bot.answerCallbackQuery(q.id).catch(() => {});
-        retreinar(bot, q.message.chat.id, gid);
         return;
       } else if (data.startsWith('sem_tol:')) {
         // Nível 1: Baixo / Médio / Alto / Personalizar.

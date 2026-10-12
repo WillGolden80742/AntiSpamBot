@@ -192,7 +192,6 @@ export function painelSemantico(gid) {
     [{ text: `🧪 Admin no teste: ${onOffCurto(cfg.punir_staff)}`, callback_data: `ai_staff:${gid}` },
      { text: `🎚 Tolerância: ${cfg.tolerancia ?? 65}%`, callback_data: `sem_tol:${gid}` }],
     [{ text: `✅ Whitelist: ${wl.links.length} links, ${wl.assuntos.length} assuntos`, callback_data: `wl:${gid}` }],
-    [{ text: '🔁 Retreinar modelo', callback_data: `sem_treinar:${gid}` }],
     [{ text: '⬅️ Voltar', callback_data: `open:${gid}` }],
   ];
   return { text: head, reply_markup: { inline_keyboard: rows } };
