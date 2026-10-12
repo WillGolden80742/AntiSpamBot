@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS = {
     log_no_admin_grupo: true,
     punir_staff: false,
     tolerancia: 65,
+    regex: true,
   },
   regras: {
     texto: '1. Proibido spam, flood e divulgação sem autorização.\n2. Proibido links suspeitos (apostas, pirâmide, phishing).\n3. Respeite o tema do grupo.',

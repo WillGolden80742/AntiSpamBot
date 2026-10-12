@@ -9,7 +9,7 @@
 import { execFile } from 'node:child_process';
 import { getModule, logEvent } from '../models/group.js';
 import { ensureBotPerm, targetIsStaff, isAnonymousAdmin } from '../helpers/admin.js';
-import { analisarSinais, TOTAL_SINAIS } from '../helpers/sinais.js';
+import { analisarSinais, analisarSinaisTexto, analisarSinaisLinks, TOTAL_SINAIS } from '../helpers/sinais.js';
 import { classificar, statsModelo, reload as reloadClassico, temModelo } from '../helpers/classico.js';
 import { registrarMensagem, lerJanela, marcarJulgadas, podar } from '../helpers/buffer.js';
 import { getWhitelist, saveWhitelist, ehPermitido } from '../helpers/whitelist.js';
@@ -88,6 +88,7 @@ export function getSemCfg(gid) {
     punir_staff: raw.punir_staff ?? false,
     tolerancia: (() => { const v = Number(raw.tolerancia ?? raw.tolerancia_warn); return Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 65; })(),
     modelo_min: (() => { const v = Number(raw.modelo_min); return Number.isFinite(v) ? Math.min(100, Math.max(50, Math.round(v))) : 90; })(),
+    regex: raw.regex ?? true,
   };
 }
 
@@ -134,7 +135,13 @@ function ehAvisoOuConversaLegitima(texto) {
 
 export function analisarTexto(texto, cfg = {}) {
   const tol = cfg.tolerancia ?? cfg.tolerancia_warn ?? 65;
-  const sinais = analisarSinais(texto, 3, 6);
+  // Chave "Regex": desligada, os padrões de TEXTO somem — ficam só os metadados
+  // de link (sempre ativos) + o modelo local.
+  const t = cfg.regex === false ? { score: 0, motivos: [] } : analisarSinaisTexto(texto);
+  const l = analisarSinaisLinks(texto);
+  const score = t.score + l.score;
+  const motivos = [...t.motivos, ...l.motivos];
+  const sinais = { score, nivel: score >= 6 ? 'severo' : score >= 3 ? 'medio' : score >= 1 ? 'baixo' : null, motivos, links: l.links };
   let ft = { origem: 'off', prob: 0, spam: false };
   try { ft = classificar(texto); } catch { ft = { origem: 'off', prob: 0, spam: false }; }
   const pct = Math.round(ft.prob * 100);
@@ -179,6 +186,7 @@ export function painelSemantico(gid) {
     `└ Varredura: ${onOff(cfg.enabled)} (tempo real, a cada mensagem)\n` +
     `└ Níveis: 🟡 log · 🟠🔴 deletar+warn (até ${cfg.max_warns}x, sem direto)\n` +
     `└ Tolerância: modelo só conta ≥${cfg.tolerancia ?? 65}%\n` +
+    `└ Regex texto: ${onOff(cfg.regex ?? true)} (links sempre analisados)\n` +
     `└ Na última: ${FINAL_LABEL[cfg.acao_final]}\n` +
     `└ Aviso no grupo: ${onOff(cfg.avisar_no_grupo)} | Teste c/ admins: ${onOff(cfg.punir_staff)}\n` +
     `└ Whitelist: ${wl.links.length} link(s), ${wl.assuntos.length} assunto(s)`;
@@ -191,6 +199,7 @@ export function painelSemantico(gid) {
      { text: `${cfg.warn ? '✅' : '⬜'} Warn`, callback_data: `ai_warn:${gid}` }],
     [{ text: `🧪 Admin no teste: ${onOffCurto(cfg.punir_staff)}`, callback_data: `ai_staff:${gid}` },
      { text: `🎚 Tolerância: ${cfg.tolerancia ?? 65}%`, callback_data: `sem_tol:${gid}` }],
+    [{ text: `${(cfg.regex ?? true) ? '✅' : '⬜'} Regex texto`, callback_data: `sem_regex:${gid}` }],
     [{ text: `✅ Whitelist: ${wl.links.length} links, ${wl.assuntos.length} assuntos`, callback_data: `wl:${gid}` }],
     [{ text: '⬅️ Voltar', callback_data: `open:${gid}` }],
   ];

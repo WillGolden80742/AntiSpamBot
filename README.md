@@ -40,7 +40,7 @@
 | Capacidade | Como |
 |---|---|
 | **Bloqueia alfabetos indesejados** | Detecta árabe, cirílico, chinês (inclui japonês/coreano), hindi, bengali, *não-ocidental* (catch-all: grego, hebraico, tailandês…) e latim. Cada um com multisseleção: `Deletar / Silenciar / Banir / Progressivo`. |
-| **Antispam trilíngue sem IA externa** | 3 camadas: 1) whitelist perdoa, 2) 71 regex com pesos em PT/ES/EN (tigrinho, pirâmide, phishing, APK, trader, sorteio falso, leilão apreensão, pedido de pix, *earn $/day, work from home, financial freedom*…) + análise de links por metadados, 3) fastText local treinado em corpus trilíngue (ou Bayes). Níveis `🟡 baixo (só log) · 🟠 médio · 🔴 severo`. |
+| **Antispam trilíngue sem IA externa** | 3 camadas: 1) whitelist perdoa, 2) 71 regex com pesos em PT/ES/EN (desligável por grupo — links continuam valendo) + análise de links por metadados, 3) fastText local treinado em corpus trilíngue (ou Bayes). Níveis `🟡 baixo (só log) · 🟠 médio · 🔴 severo`. |
 | **Punição em escada, nunca direta** | Alfa progressivo e semântico contam warns (`alfabeto:*`, `sem:*`) até `max_warns` (2–5) e só então aplicam `ban / mute / apenas deletar`. |
 | **Painel 100% no Telegram** | `/settings` no grupo → botão abre o privado → hub → `Alfabetos` ou `Antispam` → submenus (tolerância, whitelist, regras). Retreino só via CLI no servidor. |
 | **Varredura sob demanda** | Bot grava tudo que vê em `messages_log`; a função `varreduraGrupo` revarre os últimos 61 min (handler `ai_run`, sem botão no painel atual — legado de mensagens antigas). Tempo real julga cada mensagem na hora. |
@@ -100,7 +100,8 @@ AntiSpamBot/
 │   │   ├── spam.json            # 29.378 exemplos spam (TREINO, ~10k por idioma)
 │   │   ├── nao_spam.json        # 30.000 exemplos ham (TREINO, 10k por idioma)
 │   │   ├── spam_teste.json      # 29.234 exemplos spam (TESTE separado)
-│   │   └── nao_spam_teste.json  # 29.400 exemplos ham (TESTE separado)
+│   │   ├── nao_spam_teste.json  # 29.400 exemplos ham (TESTE separado)
+│   │   └── CONTEXTO_SESSAO.md   # dump histórico da sessão de remodel (decisões, estado, lições)
 │   ├── fasttext/
 │   │   ├── spam.ftz         # modelo quantizado EM USO (98 MB, dim 100 / epoch 100 / lr 0.7)
 │   │   ├── spam.vec         # vetores (26 MB, inspeção)
@@ -145,8 +146,8 @@ AntiSpamBot/
 |---|---|---|
 | `acesso.js` (113 linhas) | Trava de dono | `OWNER_ID` do env. `new_chat_members`: se quem adicionou ≠ dono → avisa e sai. Rede: mensagem de grupo sem `settings.acesso.autorizado` há +5 min → sai + `DELETE groups/settings/warns`. Grupos já no banco no boot = legado (do dono). |
 | `alfabetos.js` (678 linhas) | Fiscal de alfabetos | `ALFA_REGEX` por script + `detectarAlfabetoAtivo` (respeita desativados + exceções do não-ocidental + ignora emoji puro + ignora `/comandos` + ignora staff salvo `punir_staff`). `aplicarSelecaoImediata` (flags fixas na hora) vs `aplicarProgressivo` (warns até final). Logs espelhados em `logNoGrupoADM` ou DM dos admins. Ouve `message` + `edited_message`. |
-| `semantico.js` (423 linhas) | Juiz semântico trilíngue | `analisarTexto` (regex PT/ES/EN+modelo+tolerância) → `julgarNucleo` (baixo=só `sem_log`; médio/severo=delete+warn em escada até ban/mute) → `julgarMensagem` (tempo real + buffer + whitelist + staff) → `varreduraGrupo` (61 min, silenciosa). `retreinar()` existe mas está órfã (sem chamadores — botão e comando removidos; retreino só via CLI). Painéis `painelSemantico/painelTolerancia/painelTolNumeros`. |
-| `callbacks.js` (657 linhas) | Todos os botões inline | Prefixos `open:/done:/mod:/mod_alfa:/ab:/ab_tgl:/ab_set: (legado)/ab_exceto:/ab_excts:/ab_prog:/ab_max:/ab_final:/ab_warnmsg:/ab_log:/ab_staff:` (alfabetos) + `ai:/ai_tgl:/ai_max:/ai_final:/ai_warnmsg:/ai_del:/ai_warn:/ai_staff:/ai_run: (legado)` (antispam) + `sem_tol:/sem_tol_custom:/sem_tol_set:` + `cens_ver:/cens_editar:` (regras) + `wl:/wl_add_link:/wl_add_assunto:/wl_rm_*`. `sem_treinar:` foi removido (retreino só via CLI no servidor). `canEdit` exige admin do grupo. Multisseleção com exclusividades (progressivo × silenciar/banir; silenciar × banir). |
+| `semantico.js` (432 linhas) | Juiz semântico trilíngue | `analisarTexto` (regex PT/ES/EN+modelo+tolerância, com chave `regex` que desliga os padrões de texto) → `julgarNucleo` (baixo=só `sem_log`; médio/severo=delete+warn em escada até ban/mute) → `julgarMensagem` (tempo real + buffer + whitelist + staff) → `varreduraGrupo` (61 min, silenciosa). `retreinar()` existe mas está órfã (sem chamadores — botão e comando removidos; retreino só via CLI). Painéis `painelSemantico/painelTolerancia/painelTolNumeros`. |
+| `callbacks.js` (667 linhas) | Todos os botões inline | Prefixos `open:/done:/mod:/mod_alfa:/ab:/ab_tgl:/ab_set: (legado)/ab_exceto:/ab_excts:/ab_prog:/ab_max:/ab_final:/ab_warnmsg:/ab_log:/ab_staff:` (alfabetos) + `ai:/ai_tgl:/ai_max:/ai_final:/ai_warnmsg:/ai_del:/ai_warn:/ai_staff:/sem_regex:/ai_run: (legado)` (antispam) + `sem_tol:/sem_tol_custom:/sem_tol_set:` + `cens_ver:/cens_editar:` (regras) + `wl:/wl_add_link:/wl_add_assunto:/wl_rm_*`. `sem_treinar:` foi removido (retreino só via CLI no servidor). `canEdit` exige admin do grupo. Multisseleção com exclusividades (progressivo × silenciar/banir; silenciar × banir). |
 | `commands.js` (307 linhas) | Comandos `/` | `/start` (privado=hub, grupo=requisito admin), `/reload` (sincroniza admins), `/settings|/config|/pvtconfig` (abre privado), `/setlog [ID|aqui|limpar]` (grupo ADM de logs), `/chatid`, `/regras`, `/definir_regras`, `/analise` (reply: veredito + % + ação no privado), `/aistatus`, `/sinais` (dry-run sem punir), `/perdaoai` (zera `sem:*`), `/perdao` (zera `alfabeto:*`). Sem `/retreinar` (removido — retreino só via CLI). |
 
 ### Helpers (`app/helpers/`)
@@ -156,13 +157,13 @@ AntiSpamBot/
 | `admin.js` | `guard` (só grupo + só admin), `senderIsAdmin`, `targetIsStaff`, `isAnonymousAdmin`, `ensureBotPerm` (checa `can_restrict_members`/`can_delete_messages` antes de punir). |
 | `buffer.js` | `registrarMensagem` (cada msg vista) · `lerJanela(gid, 3600s)` (só não-julgadas) · `marcarJulgadas` (`julgado_em`) · `podar` (limpa antigas). Base da `varreduraGrupo` (61 min). |
 | `classico.js` | `temModelo()` (.ftz ou .bin) · `classificar()` (fastText via `predict-prob` → P(spam); fallback Bayes com corte 0.9) · `statsModelo()` (lê `stats.json`) · `reload()`. |
-| `defaults.js` | `DEFAULT_SETTINGS`: alfabetos tudo `desativado` + progressivo ON 3x ban; semantico OFF + deletar/warn ON 3x mute tol 65%; regras padrão 3 linhas; whitelist vazia. |
+| `defaults.js` | `DEFAULT_SETTINGS`: alfabetos tudo `desativado` + progressivo ON 3x ban; semantico OFF + deletar/warn ON 3x mute tol 65 + regex ON; regras padrão 3 linhas; whitelist vazia. |
 | `falhas.js` | `notificarFalha(bot,gid,modulo,msg)` — avisa admins no privado sem derrubar o loop. |
 | `keyboards.js` | `manageKeyboard(groups)`, `settingsKeyboard(gid)` (hub com 2 motores), `openPrivateKeyboard(botUsername)` (deep-link `t.me/bot?start=`), `manageText`. |
 | `linkmeta.js` | `URL_RE`, `extrairLinks` (máx 10/msg), `analisarLinks` — classifica link por TLD estranho (29 TLDs), encurtador (13 domínios), `t.me`, caminho suspeito. 115 domínios confiáveis que vetam phishing. Cada suspeito = +4 no score. |
 | `pending.js` | `setPendente/getPendente/clearPendente` (mapa chat+user → `{gid,tipo}`) para fluxos de 1 mensagem no privado (regras/whitelist). `cancelar` desiste. |
 | `regras.js` | `getRegrasTexto/setRegrasTexto` (módulo `regras`, máx 4000 chars, mín 10; adota legado `censurar`). Critério humano que o painel exibe. |
-| `sinais.js` | `normalizar` (minúscula, NFD sem acento, leet só dígito colado em letra `t1gr1nho→tigrinho`, zero-width, colapsa repetições) · `SINAIS` (71 regex PT/ES/EN peso 1/2/3/4 com motivo PT-BR) · `analisarSinais(texto, 3, 6)` (limiares fixos: médio≥3, severo≥6; soma + CAPS + repetidos + flood de menções + links) → `{score,nivel,motivos}` · `TOTAL_SINAIS` (=71). |
+| `sinais.js` | `normalizar` (minúscula, NFD sem acento, leet só dígito colado em letra `t1gr1nho→tigrinho`, zero-width, colapsa repetições) · `SINAIS` (71 regex PT/ES/EN peso 1/2/3/4 com motivo PT-BR) · `analisarSinaisTexto()` (só padrões de texto) + `analisarSinaisLinks()` (só metadados de link) + `analisarSinais(texto, 3, 6)` (combinado: limiares fixos médio≥3, severo≥6; soma + CAPS + repetidos + flood de menções + links) → `{score,nivel,motivos}` · `TOTAL_SINAIS` (=71). |
 | `whitelist.js` | `getWhitelist/saveWhitelist/ehPermitido/painelWhitelist/removerWlItem` — `{links:[domínios], assuntos:[strings]}` (máx 200 cada; botões ❌ só pros 10 primeiros de cada lista). Perdão total: nem é julgado. |
 
 ### Model e DB
@@ -201,7 +202,7 @@ Telegram (polling)
 
 **Ordem do juiz semântico** (`julgarMensagem`): só grupo → ignora bot/comando → `registrarMensagem` → se `enabled=false` para → se sem modelo loga `sem_degraded` → staff passa se `punir_staff=false` → whitelist perdoa → `julgarNucleo` → `marcarJulgadas`.
 
-**Fusão regex+modelo** (`analisarTexto`, limiares do regex fixos `3/6` via `analisarSinais(texto, 3, 6)`): severo/médio do regex (com veto do modelo se `pct<15` → vira baixo) · `score≥1` + `pct>tolerância` → médio senão baixo · `score=0` + `pct>modelo_min` → médio · `pct≥50` → baixo · senão limpo. O `modelo_min` fecha a torneira do modelo puro: sem nenhum sinal de regex, só vira punição acima dele (90 via `getSemCfg`; 95 no fallback interno quando a cfg não traz o campo). Salvaguardas trilíngues (`ehAvisoOuConversaLegitima`) passam na frente de tudo.
+**Fusão regex+modelo** (`analisarTexto`, limiares do regex fixos `3/6`): com a chave `regex` **ligada** (padrão), severo/médio do regex (com veto do modelo se `pct<15` → vira baixo) · `score≥1` + `pct>tolerância` → médio senão baixo · `score=0` + `pct>modelo_min` → médio · `pct≥50` → baixo · senão limpo. Com a chave **desligada** (`cfg.regex === false`), os 71 padrões de texto somem (`score` de texto = 0) — ficam **só os metadados de link (sempre ativos) + o modelo local**. O `modelo_min` fecha a torneira do modelo puro: sem nenhum sinal, só vira punição acima dele (90 via `getSemCfg`; 95 no fallback interno quando a cfg não traz o campo). Salvaguardas trilíngues (`ehAvisoOuConversaLegitima`) passam na frente de tudo.
 
 ---
 
@@ -255,7 +256,7 @@ Punição (`julgarNucleo`): `baixo` = só `events(sem_log)`, silencioso. `médio
 
 ### Painéis inline (`callbacks.js`)
 
-`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] [✅ Concluir]` → Alfabetos: submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, testar com admins. Antispam (`painelSemantico`): liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Tolerância` (50/65/80 + grade 10–90), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar. Sem botão de varredura nem de retreino no painel atual (handlers `ai_run:` e `sem_treinar:` existiam para mensagens antigas; `sem_treinar:` foi removido do código e o comando `/retreinar` também — retreino só via CLI no servidor). Callbacks legados ainda atendidos: `ab_set:` (submenu antigo de escolha única) e `mod:` (hub antigo).
+`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] [✅ Concluir]` → Alfabetos: submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, testar com admins. Antispam (`painelSemantico`): liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Tolerância` (50/65/80 + grade 10–90), ✅/⬜ `Regex texto` (padrão ligado; desligado = só links + modelo), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar. Sem botão de varredura nem de retreino no painel atual (handlers `ai_run:` e `sem_treinar:` existiam para mensagens antigas; `sem_treinar:` foi removido do código e o comando `/retreinar` também — retreino só via CLI no servidor). Callbacks legados ainda atendidos: `ab_set:` (submenu antigo de escolha única) e `mod:` (hub antigo).
 
 ---
 
@@ -271,7 +272,7 @@ messages_log(group_id, message_id, user_id, texto, criado_em, julgado_em) PK(gro
 events(id AI PK, kind, group_id, user_id, meta JSON, created_at)
 ```
 
-Módulos em `settings.data`: `alfabetos` (7 seleções + progressivo/max/ação final/aviso/log ADM/grupo ADM/modo teste) · `semantico` (enabled/deletar/warn/avisar/max_warns/acao_final/log/staff/tolerância/modelo_min) · `regras` (texto) · `whitelist` (links/assuntos) · `acesso` (autorizado/adicionado_por/em). Adoção automática de legados: `antispam_ai→semantico` (`getSemCfg`), `censurar→regras` (`getRegrasTexto`).
+Módulos em `settings.data`: `alfabetos` (7 seleções + progressivo/max/ação final/aviso/log ADM/grupo ADM/modo teste) · `semantico` (enabled/deletar/warn/avisar/max_warns/acao_final/log/staff/tolerância/modelo_min/regex) · `regras` (texto) · `whitelist` (links/assuntos) · `acesso` (autorizado/adicionado_por/em). Adoção automática de legados: `antispam_ai→semantico` (`getSemCfg`), `censurar→regras` (`getRegrasTexto`).
 
 ---
 
@@ -361,7 +362,7 @@ Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (se
 
 - **Whitelist** (`wl:`): domínios (`exemplo.com`) e assuntos (frases) que **furam o juiz** — nem são analisados. Gerencie no painel ou no privado (fluxo `pending.js`, `cancelar` desiste). Ideal p/ links oficiais do grupo e avisos da moderação.
 - **Regras** (`cens_ver/cens_editar`, `/regras`, `/definir_regras`): texto humano exibido no painel do antispam como *critério*. Não é regex — é referência p/ admins e membros.
-- **Tolerância** (`sem_tol`, default **65%**, clamp 0–100): probabilidade mínima do fastText p/ entrar na escada. `Baixo 50%` = rigoroso (pune mais) · `Médio 65%` · `Alto 80%` = perdoa mais · `Personalizar` (grade 10–90; o handler aceita 0–100). Regex severo **sempre** pune independente da tolerância (salvo veto `pct<15`). **Modelo puro sem regex** só pune acima de `modelo_min` (faixa 50–100; 90 vindo do `getSemCfg`, 95 no fallback interno) — abaixo disso vira só 🟡 log. Ação final efetiva em grupos novos: semântico `mute` (seed), alfabetos `ban` (o fallback do código quando o campo falta é `ban` nos dois).
+- **Tolerância** (`sem_tol`, default **65%**, clamp 0–100) + **`Regex texto`** (`sem_regex`, default **ligado**): com o regex desligado, os 71 padrões somem e valem só metadados de link + modelo local (ideal p/ grupos que só querem pegar link de aposta/golpe sem filtrar texto). `Baixo 50%` = rigoroso (pune mais) · `Médio 65%` · `Alto 80%` = perdoa mais · `Personalizar` (grade 10–90; o handler aceita 0–100). Com o regex ligado, severo **sempre** pune independente da tolerância (salvo veto `pct<15`). **Modelo puro sem regex** só pune acima de `modelo_min` (faixa 50–100; 90 vindo do `getSemCfg`, 95 no fallback interno) — abaixo disso vira só 🟡 log. Ação final efetiva em grupos novos: semântico `mute` (seed), alfabetos `ban` (o fallback do código quando o campo falta é `ban` nos dois).
 
 ---
 

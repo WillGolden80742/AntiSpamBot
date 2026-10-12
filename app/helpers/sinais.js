@@ -126,8 +126,8 @@ function temCaps(texto) {
   return caps / letras.length > 0.6;
 }
 
-// Retorna { score, nivel: 'severo'|'medio'|'baixo'|null, motivos: [...] }
-export function analisarSinais(texto, limiarMedio = 3, limiarSevero = 6) {
+// ---- só TEXTO (padrões SINAIS + caixa/repetição/menções). Usado quando a chave "Regex" está ligada. ----
+export function analisarSinaisTexto(texto) {
   const low = String(texto || '').toLowerCase();
   // leet FORA das URLs: dígito de link virava letra ("83746906"→"beta") e falsava aposta
   const norm = normalizar(low.replace(URL_RE, ' '));
@@ -147,16 +147,32 @@ export function analisarSinais(texto, limiarMedio = 3, limiarSevero = 6) {
   if (mencoes >= 12) { score += 6; motivos.push('flood de marcação'); }
   else if (mencoes >= 8) { score += 4; motivos.push('flood de marcação'); }
   else if (mencoes >= 5) { score += 2; motivos.push('muitas marcações'); }
-  // Metadados dos links: cada link suspeito vira um sinal forte.
+  return { score, motivos };
+}
+
+// ---- só LINKS (metadados). Sempre ativos, mesmo com o Regex desligado. ----
+export function analisarSinaisLinks(texto) {
   const links = analisarLinks(texto);
+  let score = 0;
+  const motivos = [];
   for (const l of links.suspeitos) {
     score += 4;
     const m = `link suspeito: ${l.host} (${l.motivos[0] || 'suspeito'})`;
     if (!motivos.includes(m)) motivos.push(m);
   }
   if (links.metas.length >= 3) { score += 1; motivos.push('múltiplos links'); }
+  return { score, motivos, links };
+}
+
+// Combinado (texto + links) — usado pelo treino e como padrão do juiz.
+// Retorna { score, nivel: 'severo'|'medio'|'baixo'|null, motivos: [...] }
+export function analisarSinais(texto, limiarMedio = 3, limiarSevero = 6) {
+  const t = analisarSinaisTexto(texto);
+  const l = analisarSinaisLinks(texto);
+  const score = t.score + l.score;
+  const motivos = [...t.motivos, ...l.motivos];
   const nivel = score >= limiarSevero ? 'severo' : score >= limiarMedio ? 'medio' : score >= 1 ? 'baixo' : null;
-  return { score, nivel, motivos, links };
+  return { score, nivel, motivos, links: l.links };
 }
 
 export const TOTAL_SINAIS = SINAIS.length;

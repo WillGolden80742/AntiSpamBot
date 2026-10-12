@@ -551,6 +551,16 @@ export function registerCallbacks(bot) {
         const p = painelSemantico(gid); await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id, { text: cfg.punir_staff ? 'Modo teste ligado.' : 'Modo teste desligado.' }).catch(() => {});
         return;
+      } else if (data.startsWith('sem_regex:')) {
+        // Chave do controle regex de texto (padrão: ativo). Desligado, valem
+        // só os metadados de link + o modelo local.
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        const cfg = getSemCfg(gid); cfg.regex = !(cfg.regex ?? true);
+        saveSemCfg(gid, cfg);
+        const p = painelSemantico(gid); await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id, { text: `Regex texto ${cfg.regex ? 'ligado' : 'desligado'}.` }).catch(() => {});
+        return;
       } else if (data.startsWith('ai_run:')) {
         // DISPARAR: revarre os últimos 61min do buffer na hora exata.
         const gid = data.split(':')[1];
