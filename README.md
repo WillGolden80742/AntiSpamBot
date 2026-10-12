@@ -100,8 +100,7 @@ AntiSpamBot/
 │   │   ├── spam.json            # 29.378 exemplos spam (TREINO, ~10k por idioma)
 │   │   ├── nao_spam.json        # 30.000 exemplos ham (TREINO, 10k por idioma)
 │   │   ├── spam_teste.json      # 29.234 exemplos spam (TESTE separado)
-│   │   ├── nao_spam_teste.json  # 29.400 exemplos ham (TESTE separado)
-│   │   └── CONTEXTO_SESSAO.md   # dump histórico da sessão de remodel (decisões, estado, lições)
+│   │   └── nao_spam_teste.json  # 29.400 exemplos ham (TESTE separado)
 │   ├── fasttext/
 │   │   ├── spam.ftz         # modelo quantizado EM USO (98 MB, dim 100 / epoch 100 / lr 0.7)
 │   │   ├── spam.vec         # vetores (26 MB, inspeção)
