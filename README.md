@@ -42,7 +42,7 @@
 | **Bloqueia alfabetos indesejados** | Detecta árabe, cirílico, chinês (inclui japonês/coreano), hindi, bengali, *não-ocidental* (catch-all: grego, hebraico, tailandês…) e latim. Cada um com multisseleção: `Deletar / Silenciar / Banir / Progressivo`. |
 | **Antispam trilíngue sem IA externa** | 3 camadas: 1) whitelist perdoa, 2) 71 regex com pesos em PT/ES/EN (tigrinho, pirâmide, phishing, APK, trader, sorteio falso, leilão apreensão, pedido de pix, *earn $/day, work from home, financial freedom*…) + análise de links por metadados, 3) fastText local treinado em corpus trilíngue (ou Bayes). Níveis `🟡 baixo (só log) · 🟠 médio · 🔴 severo`. |
 | **Punição em escada, nunca direta** | Alfa progressivo e semântico contam warns (`alfabeto:*`, `sem:*`) até `max_warns` (2–5) e só então aplicam `ban / mute / apenas deletar`. |
-| **Painel 100% no Telegram** | `/settings` no grupo → botão abre o privado → hub → `Alfabetos` ou `Antispam` → submenus (tolerância, whitelist, regras). Retreino só via `/retreinar` no grupo. |
+| **Painel 100% no Telegram** | `/settings` no grupo → botão abre o privado → hub → `Alfabetos` ou `Antispam` → submenus (tolerância, whitelist, regras). Retreino só via CLI no servidor. |
 | **Varredura sob demanda** | Bot grava tudo que vê em `messages_log`; a função `varreduraGrupo` revarre os últimos 61 min (handler `ai_run`, sem botão no painel atual — legado de mensagens antigas). Tempo real julga cada mensagem na hora. |
 | **Trava de dono** | Só o `OWNER_ID` adiciona o bot em grupos. Grupo estranho = aviso + `leaveChat` + limpeza local. |
 | **Isolamento total de falhas** | `unhandledRejection/uncaughtException` só logam; cada listener tem `try/catch` + `notificarFalha` no privado. Bot nunca cai. |
@@ -75,7 +75,7 @@ AntiSpamBot/
 │   │   ├── alfabetos.js     # fiscal de alfabetos + progressivo + logs ADM
 │   │   ├── callbacks.js     # hub de botões inline (open/mod_alfa/ai/wl/...)
 │   │   ├── commands.js      # /start /settings /setlog /regras /analise /sinais...
-│   │   └── semantico.js     # juiz semântico + varredura + retreinar + tolerância
+│   │   └── semantico.js     # juiz semântico + varredura + tolerância (+ retreinar() órfã)
 │   ├── helpers/
 │   │   ├── admin.js         # guard/senderIsAdmin/targetIsStaff/isAnonymousAdmin/ensureBotPerm/friendlyError
 │   │   ├── buffer.js        # messages_log: registra/lê janela/poda/marca julgadas
@@ -145,9 +145,9 @@ AntiSpamBot/
 |---|---|---|
 | `acesso.js` (113 linhas) | Trava de dono | `OWNER_ID` do env. `new_chat_members`: se quem adicionou ≠ dono → avisa e sai. Rede: mensagem de grupo sem `settings.acesso.autorizado` há +5 min → sai + `DELETE groups/settings/warns`. Grupos já no banco no boot = legado (do dono). |
 | `alfabetos.js` (678 linhas) | Fiscal de alfabetos | `ALFA_REGEX` por script + `detectarAlfabetoAtivo` (respeita desativados + exceções do não-ocidental + ignora emoji puro + ignora `/comandos` + ignora staff salvo `punir_staff`). `aplicarSelecaoImediata` (flags fixas na hora) vs `aplicarProgressivo` (warns até final). Logs espelhados em `logNoGrupoADM` ou DM dos admins. Ouve `message` + `edited_message`. |
-| `semantico.js` (423 linhas) | Juiz semântico trilíngue | `analisarTexto` (regex PT/ES/EN+modelo+tolerância) → `julgarNucleo` (baixo=só `sem_log`; médio/severo=delete+warn em escada até ban/mute) → `julgarMensagem` (tempo real + buffer + whitelist + staff) → `varreduraGrupo` (61 min, silenciosa) → `retreinar` (só via `/retreinar`; sem botão no painel). Painéis `painelSemantico/painelTolerancia/painelTolNumeros`. |
-| `callbacks.js` (657 linhas) | Todos os botões inline | Prefixos `open:/done:/mod:/mod_alfa:/ab:/ab_tgl:/ab_set: (legado)/ab_exceto:/ab_excts:/ab_prog:/ab_max:/ab_final:/ab_warnmsg:/ab_log:/ab_staff:` (alfabetos) + `ai:/ai_tgl:/ai_max:/ai_final:/ai_warnmsg:/ai_del:/ai_warn:/ai_staff:/ai_run: (legado)` (antispam) + `sem_tol:/sem_tol_custom:/sem_tol_set:` + `cens_ver:/cens_editar:` (regras) + `wl:/wl_add_link:/wl_add_assunto:/wl_rm_*`. `sem_treinar:` foi removido (retreino só via `/retreinar`). `canEdit` exige admin do grupo. Multisseleção com exclusividades (progressivo × silenciar/banir; silenciar × banir). |
-| `commands.js` (314 linhas) | Comandos `/` | `/start` (privado=hub, grupo=requisito admin), `/reload` (sincroniza admins), `/settings|/config|/pvtconfig` (abre privado), `/setlog [ID|aqui|limpar]` (grupo ADM de logs), `/chatid`, `/regras`, `/definir_regras`, `/analise` (reply: veredito + % + ação no privado), `/aistatus`, `/sinais` (dry-run sem punir), `/retreinar`, `/perdaoai` (zera `sem:*`), `/perdao` (zera `alfabeto:*`). |
+| `semantico.js` (423 linhas) | Juiz semântico trilíngue | `analisarTexto` (regex PT/ES/EN+modelo+tolerância) → `julgarNucleo` (baixo=só `sem_log`; médio/severo=delete+warn em escada até ban/mute) → `julgarMensagem` (tempo real + buffer + whitelist + staff) → `varreduraGrupo` (61 min, silenciosa). `retreinar()` existe mas está órfã (sem chamadores — botão e comando removidos; retreino só via CLI). Painéis `painelSemantico/painelTolerancia/painelTolNumeros`. |
+| `callbacks.js` (657 linhas) | Todos os botões inline | Prefixos `open:/done:/mod:/mod_alfa:/ab:/ab_tgl:/ab_set: (legado)/ab_exceto:/ab_excts:/ab_prog:/ab_max:/ab_final:/ab_warnmsg:/ab_log:/ab_staff:` (alfabetos) + `ai:/ai_tgl:/ai_max:/ai_final:/ai_warnmsg:/ai_del:/ai_warn:/ai_staff:/ai_run: (legado)` (antispam) + `sem_tol:/sem_tol_custom:/sem_tol_set:` + `cens_ver:/cens_editar:` (regras) + `wl:/wl_add_link:/wl_add_assunto:/wl_rm_*`. `sem_treinar:` foi removido (retreino só via CLI no servidor). `canEdit` exige admin do grupo. Multisseleção com exclusividades (progressivo × silenciar/banir; silenciar × banir). |
+| `commands.js` (307 linhas) | Comandos `/` | `/start` (privado=hub, grupo=requisito admin), `/reload` (sincroniza admins), `/settings|/config|/pvtconfig` (abre privado), `/setlog [ID|aqui|limpar]` (grupo ADM de logs), `/chatid`, `/regras`, `/definir_regras`, `/analise` (reply: veredito + % + ação no privado), `/aistatus`, `/sinais` (dry-run sem punir), `/perdaoai` (zera `sem:*`), `/perdao` (zera `alfabeto:*`). Sem `/retreinar` (removido — retreino só via CLI). |
 
 ### Helpers (`app/helpers/`)
 
@@ -250,13 +250,12 @@ Punição (`julgarNucleo`): `baixo` = só `events(sem_log)`, silencioso. `médio
 | `/analise` | grupo (reply) | Veredito `SPAM/suspeita/limpo` + nível + % + motivo + sinais + ação (toma ação se spam). Vai no **privado** do admin. |
 | `/aistatus` | qualquer | Motor + treino (`stats.json`) + resumo antispam/whitelist do grupo. |
 | `/sinais` | grupo (reply) | Dry-run: nível/motivo/score/% **sem punir**. |
-| `/retreinar` | grupo | Roda `bin/treinar.js` em background (cooldown 60s). Única via de retreino no Telegram (botão do painel removido). |
 | `/perdaoai [@\|ID\|reply]` | grupo | Zera warns `sem:*` (+ legados `ai:*/censura:*`). |
 | `/perdao [@\|ID\|reply]` | grupo | Zera warns `alfabeto:*`. |
 
 ### Painéis inline (`callbacks.js`)
 
-`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] [✅ Concluir]` → Alfabetos: submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, testar com admins. Antispam (`painelSemantico`): liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Tolerância` (50/65/80 + grade 10–90), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar. Sem botão de varredura nem de retreino no painel atual (handlers `ai_run:` e `sem_treinar:` existiam para mensagens antigas; `sem_treinar:` foi removido do código — retreino só via `/retreinar`). Callbacks legados ainda atendidos: `ab_set:` (submenu antigo de escolha única) e `mod:` (hub antigo).
+`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] [✅ Concluir]` → Alfabetos: submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, testar com admins. Antispam (`painelSemantico`): liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Tolerância` (50/65/80 + grade 10–90), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar. Sem botão de varredura nem de retreino no painel atual (handlers `ai_run:` e `sem_treinar:` existiam para mensagens antigas; `sem_treinar:` foi removido do código e o comando `/retreinar` também — retreino só via CLI no servidor). Callbacks legados ainda atendidos: `ab_set:` (submenu antigo de escolha única) e `mod:` (hub antigo).
 
 ---
 
@@ -342,7 +341,7 @@ Para manter online na VPS: `pm2 start bot.js --name antispam`, `systemd`, ou `tm
 ## 13. Treinamento (`bin/treinar.js`)
 
 ```bash
-node bin/treinar.js   # ou: pnpm sem:treinar  |  ou: /retreinar no Telegram
+node bin/treinar.js   # ou: pnpm sem:treinar (só no servidor — sem via Telegram)
 ```
 
 Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (sem vazamento treino→teste):
@@ -384,9 +383,8 @@ Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (se
 |---|---|---|
 | `Falta TELEGRAM_BOT_TOKEN` | `.env` sem token | Preencha e reinicie. |
 | Bot não pune | Não é admin / sem permissão / módulo desligado / staff ignorado / whitelist perdoou / sem modelo | Dê admin + permissões → `/reload` → ligue o motor → cheque `punir_staff` → `/sinais` (reply) p/ dry-run → `/aistatus` p/ modelo. |
-| `modelo local ausente — rode Retreinar` | sem `.ftz` | `node bin/treinar.js` (precisa do binário `fasttext`). |
+| `modelo local ausente` (varredura) | sem `.ftz` | `node bin/treinar.js` no servidor (precisa do binário `fasttext`). |
 | Logs só no privado, não no grupo ADM | `admin_grupo_id` vazio ou bot fora do grupo ADM | Adicione o bot no grupo ADM → `/chatid` lá → `/setlog ID` no monitorado. |
-| `/retreinar` diz aguarde 1 min | cooldown 60s | Aguarde e tente de novo. |
 | Mensagem em russo punida mesmo liberada | alfabeto cirílico com flag marcada (flag vence exceção) | Desligue o cirílico (deixe OFF) e mantenha só a exceção marcada. |
 | Emoji sozinho punido | impossível por design | Se puniu, era outro script junto — use `/sinais` p/ ver o motivo. |
 

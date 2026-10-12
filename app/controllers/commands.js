@@ -2,7 +2,7 @@ import { findOrCreateGroup, visibleGroupsFor } from '../models/group.js';
 import { manageKeyboard, manageText, openPrivateKeyboard } from '../helpers/keyboards.js';
 import { guard, senderIsAdmin, targetIsStaff, isAnonymousAdmin } from '../helpers/admin.js';
 import { getProgressivoCfg } from './alfabetos.js';
-import { getSemCfg, analisarTexto, julgarNucleo, retreinar } from './semantico.js';
+import { getSemCfg, analisarTexto, julgarNucleo } from './semantico.js';
 import { getRegrasTexto, setRegrasTexto } from '../helpers/regras.js';
 import { TOTAL_SINAIS } from '../helpers/sinais.js';
 import { statsModelo } from '../helpers/classico.js';
@@ -244,13 +244,6 @@ export function registerCommands(bot) {
     });
   });
 
-  // /retreinar — retreina o modelo local com db/corpus (só admins).
-  bot.onText(/\/retreinar/, async (msg) => {
-    await guard(bot, msg, async () => {
-      retreinar(bot, msg.chat.id, String(msg.chat.id));
-    });
-  });
-
   // /perdaoai — zera warns do antispam (sem:*) do usuário (reply, @ ou ID).
   // Também limpa restos legados (ai:*, censura:*).
   bot.onText(/\/perdaoai/, async (msg) => {
@@ -310,5 +303,5 @@ export function registerCommands(bot) {
   });
 
   // Módulos: alfabetos (/start /reload /settings /setlog /chatid /perdao)
-  // + antispam semântico (/regras /definir_regras /aistatus /perdaoai /sinais /retreinar) — listener em semantico.js
+  // + antispam semântico (/regras /definir_regras /aistatus /perdaoai /sinais) — listener em semantico.js
 }
