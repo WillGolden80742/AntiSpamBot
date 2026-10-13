@@ -33,6 +33,11 @@ export function listGroups() {
   return db.prepare('SELECT * FROM groups ORDER BY title').all();
 }
 
+export function getGroupTitle(id) {
+  const g = db.prepare('SELECT title FROM groups WHERE id = ?').get(String(id));
+  return g?.title || String(id);
+}
+
 // Só grupos onde o BOT é admin E o usuário é admin (verificação live via API).
 // Grupos demo/saídos (bot fora ou sem acesso) são ocultados, não apagados.
 export async function visibleGroupsFor(bot, userId) {

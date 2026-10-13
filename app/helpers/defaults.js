@@ -27,6 +27,9 @@ export const DEFAULT_SETTINGS = {
     punir_staff: false,
     tolerancia: 65,
     regex: true,
+    minimo_chars: 30,
+    ignorar_min_arroba: false,
+    ignorar_min_link: false,
   },
   regras: {
     texto: '1. Proibido spam, flood e divulgação sem autorização.\n2. Proibido links suspeitos (apostas, pirâmide, phishing).\n3. Respeite o tema do grupo.',

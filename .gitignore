@@ -26,7 +26,7 @@ log/*.log
 *.log
 
 # Backups locais (código + banco)
-backups/*/
+backups/
 !backups/.gitkeep
 
 # Área de trabalho do corpus (scripts .py versionados; dados/cache ignorados)

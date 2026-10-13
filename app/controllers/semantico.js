@@ -7,9 +7,9 @@
 // Punição: baixo=só registra (silencioso) | médio/severo=deleta+warn na escada
 // até a ação final. NENHUMA punição é direta — tudo passa por warn antes.
 import { execFile } from 'node:child_process';
-import { getModule, logEvent } from '../models/group.js';
+import { getModule, logEvent, getGroupTitle } from '../models/group.js';
 import { ensureBotPerm, targetIsStaff, isAnonymousAdmin } from '../helpers/admin.js';
-import { analisarSinais, analisarSinaisTexto, analisarSinaisLinks, TOTAL_SINAIS } from '../helpers/sinais.js';
+import { analisarSinais, analisarSinaisTexto, analisarSinaisLinks, TOTAL_SINAIS, URL_RE, extrairLinks } from '../helpers/sinais.js';
 import { classificar, statsModelo, reload as reloadClassico, temModelo } from '../helpers/classico.js';
 import { registrarMensagem, lerJanela, marcarJulgadas, podar } from '../helpers/buffer.js';
 import { getWhitelist, saveWhitelist, ehPermitido } from '../helpers/whitelist.js';
@@ -30,9 +30,10 @@ export const TOL_NUMEROS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 // Painel da tolerância: 3 presets + personalizar + voltar.
 export function painelTolerancia(gid) {
   const cfg = getSemCfg(gid);
+  const titulo = getGroupTitle(gid);
   const atual = cfg.tolerancia ?? 65;
   const marca = (v) => (v === atual ? '✅ ' : '');
-  const head = `🎚 <b>Tolerância</b>\nAtual: <code>${atual}%</code>\n\nAté quanto deixa passar. Baixa = rigorosa (pune mais) · Alta = perdoa mais.`;
+  const head = `👥 <b>${titulo}</b>\n\n🎚 <b>Tolerância</b>\nAtual: <code>${atual}%</code>\n\nAté quanto deixa passar. Baixa = rigorosa (pune mais) · Alta = perdoa mais.`;
   const rows = [
     [{ text: `${marca(50)}🔴 Baixo (50%)`, callback_data: `sem_tol_set:${gid}:50` },
      { text: `${marca(65)}🟡 Médio (65%)`, callback_data: `sem_tol_set:${gid}:65` }],
@@ -46,7 +47,8 @@ export function painelTolerancia(gid) {
 // Grade 10-90 do personalizar.
 export function painelTolNumeros(gid) {
   const atual = getSemCfg(gid).tolerancia ?? 65;
-  const head = `🎚 <b>Tolerância personalizada</b>\nAtual: <code>${atual}%</code>\n\nToque o valor:`;
+  const titulo = getGroupTitle(gid);
+  const head = `👥 <b>${titulo}</b>\n\n🎚 <b>Tolerância personalizada</b>\nAtual: <code>${atual}%</code>\n\nToque o valor:`;
   const rows = [];
   for (let i = 0; i < TOL_NUMEROS.length; i += 3) {
     rows.push(TOL_NUMEROS.slice(i, i + 3).map((v) => ({
@@ -55,6 +57,51 @@ export function painelTolNumeros(gid) {
     })));
   }
   rows.push([{ text: '⬅️ Voltar', callback_data: `sem_tol:${gid}` }]);
+  return { text: head, reply_markup: { inline_keyboard: rows } };
+}
+
+export const MIN_CHARS_OPCOES = [10, 20, 30, 40, 50, 60, 100];
+
+// Painel Mínimo de Caracteres
+export function painelMinChars(gid) {
+  const cfg = getSemCfg(gid);
+  const titulo = getGroupTitle(gid);
+  const atual = cfg.minimo_chars ?? 0;
+  const ignArroba = cfg.ignorar_min_arroba ?? false;
+  const ignLink = cfg.ignorar_min_link ?? false;
+  const marca = (v) => (v === atual ? '✅ ' : '');
+
+  const head =
+    `👥 <b>${titulo}</b>\n\n` +
+    `📏 <b>Mínimo de Caracteres</b>\n` +
+    `Atual: <code>${atual === 0 ? 'Desativado (0)' : `${atual} caracteres`}</code>\n\n` +
+    `Mensagens menores que o limite são ignoradas pelo antispam.\n` +
+    `💡 Use as exceções abaixo para ainda analisar mensagens curtas se tiverem @ ou link:`;
+
+  const rows = [
+    [
+      { text: `${marca(0)}Desativado`, callback_data: `sem_min_set:${gid}:0` },
+      { text: `${marca(10)}10`, callback_data: `sem_min_set:${gid}:10` },
+      { text: `${marca(20)}20`, callback_data: `sem_min_set:${gid}:20` },
+      { text: `${marca(30)}30`, callback_data: `sem_min_set:${gid}:30` },
+    ],
+    [
+      { text: `${marca(40)}40`, callback_data: `sem_min_set:${gid}:40` },
+      { text: `${marca(50)}50`, callback_data: `sem_min_set:${gid}:50` },
+      { text: `${marca(60)}60`, callback_data: `sem_min_set:${gid}:60` },
+      { text: `${marca(100)}100`, callback_data: `sem_min_set:${gid}:100` },
+    ],
+    [
+      { text: `${ignArroba ? '✅' : '⬜'} Ignorar regra quando tiver @`, callback_data: `sem_min_arroba:${gid}` },
+    ],
+    [
+      { text: `${ignLink ? '✅' : '⬜'} Ignorar regra quando tiver link`, callback_data: `sem_min_link:${gid}` },
+    ],
+    [
+      { text: '⬅️ Voltar p/ Antispam', callback_data: `ai:${gid}` },
+    ],
+  ];
+
   return { text: head, reply_markup: { inline_keyboard: rows } };
 }
 
@@ -89,6 +136,9 @@ export function getSemCfg(gid) {
     tolerancia: (() => { const v = Number(raw.tolerancia ?? raw.tolerancia_warn); return Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 65; })(),
     modelo_min: (() => { const v = Number(raw.modelo_min); return Number.isFinite(v) ? Math.min(100, Math.max(50, Math.round(v))) : 90; })(),
     regex: raw.regex ?? true,
+    minimo_chars: (() => { const v = Number(raw.minimo_chars); return Number.isFinite(v) ? Math.max(0, Math.round(v)) : 30; })(),
+    ignorar_min_arroba: Boolean(raw.ignorar_min_arroba),
+    ignorar_min_link: Boolean(raw.ignorar_min_link),
   };
 }
 
@@ -170,6 +220,7 @@ export function analisarTexto(texto, cfg = {}) {
 
 export function painelSemantico(gid) {
   const cfg = getSemCfg(gid);
+  const titulo = getGroupTitle(gid);
   const wl = getWhitelist(gid);
   const regras = getRegrasTexto(gid);
   const previa = regras.length > 160 ? `${regras.slice(0, 160)}…` : regras;
@@ -178,6 +229,7 @@ export function painelSemantico(gid) {
     ? `✅ treinado (${st.nSpam + st.nHam} exemplos, precisão ${st.fasttextTest.replace(/\s+/g, ' ')})`
     : '⚠️ ainda não treinado — rode Retreinar';
   const head =
+    `👥 <b>${titulo}</b>\n\n` +
     `🛡 <b>Antispam</b> — ${onOff(cfg.enabled)}\n` +
     `Motor local: ${TOTAL_SINAIS} sinais + fastText. ${motor}\n` +
     `Critério: suas 📜 regras. Perdão: ✅ whitelist.\n\n` +
@@ -187,6 +239,7 @@ export function painelSemantico(gid) {
     `└ Níveis: 🟡 log · 🟠🔴 deletar+warn (até ${cfg.max_warns}x, sem direto)\n` +
     `└ Tolerância: modelo só conta ≥${cfg.tolerancia ?? 65}%\n` +
     `└ Regex texto: ${onOff(cfg.regex ?? true)} (links sempre analisados)\n` +
+    `└ Mínimo chars: ${cfg.minimo_chars > 0 ? `${cfg.minimo_chars} (exceções: @=${onOffCurto(cfg.ignorar_min_arroba)}, link=${onOffCurto(cfg.ignorar_min_link)})` : 'Desativado'}\n` +
     `└ Na última: ${FINAL_LABEL[cfg.acao_final]}\n` +
     `└ Aviso no grupo: ${onOff(cfg.avisar_no_grupo)} | Teste c/ admins: ${onOff(cfg.punir_staff)}\n` +
     `└ Whitelist: ${wl.links.length} link(s), ${wl.assuntos.length} assunto(s)`;
@@ -199,7 +252,8 @@ export function painelSemantico(gid) {
      { text: `${cfg.warn ? '✅' : '⬜'} Warn`, callback_data: `ai_warn:${gid}` }],
     [{ text: `🧪 Admin no teste: ${onOffCurto(cfg.punir_staff)}`, callback_data: `ai_staff:${gid}` },
      { text: `🎚 Tolerância: ${cfg.tolerancia ?? 65}%`, callback_data: `sem_tol:${gid}` }],
-    [{ text: `${(cfg.regex ?? true) ? '✅' : '⬜'} Regex texto`, callback_data: `sem_regex:${gid}` }],
+    [{ text: `${(cfg.regex ?? true) ? '✅' : '⬜'} Regex texto`, callback_data: `sem_regex:${gid}` },
+     { text: `📏 Mín. Caracteres: ${cfg.minimo_chars > 0 ? cfg.minimo_chars : 'Off'}`, callback_data: `sem_min:${gid}` }],
     [{ text: `✅ Whitelist: ${wl.links.length} links, ${wl.assuntos.length} assuntos`, callback_data: `wl:${gid}` }],
     [{ text: '⬅️ Voltar', callback_data: `open:${gid}` }],
   ];
@@ -328,6 +382,19 @@ export async function julgarMensagem(bot, msg) {
     if (staff && !cfg.punir_staff) return;
     const wl = getWhitelist(gid);
     if (ehPermitido(texto, wl).permitido) { marcarJulgadas(gid, [msg.message_id]); return; }
+
+    // Filtro de Mínimo de Caracteres:
+    // Se a mensagem for menor que minimo_chars, só é analisada se tiver @ (com exceção de @ ativa) ou link (com exceção de link ativa).
+    if (cfg.minimo_chars > 0 && texto.length < cfg.minimo_chars) {
+      const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(texto);
+      const temLink = cfg.ignorar_min_link && (URL_RE.test(texto) || extrairLinks(texto).length > 0);
+      URL_RE.lastIndex = 0;
+      if (!temArroba && !temLink) {
+        marcarJulgadas(gid, [msg.message_id]);
+        return;
+      }
+    }
+
     const arroba = msg.from.username ? `@${msg.from.username}` : (msg.from.first_name || msg.from.id);
     await julgarNucleo(bot, gid, msg.chat.title || gid, msg.message_id, Number(msg.from.id), arroba, texto, cfg, false);
     marcarJulgadas(gid, [msg.message_id]);
@@ -355,6 +422,12 @@ export async function varreduraGrupo(bot, gid) {
       if (ehPermitido(m.texto, wl).permitido) continue;
       const staff = await ehStaff(bot, { chat: { id: gid }, from: { id: m.user_id } }).catch(() => false);
       if (staff && !cfg.punir_staff) { ignoradas++; continue; }
+      if (cfg.minimo_chars > 0 && String(m.texto || '').length < cfg.minimo_chars) {
+        const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(m.texto);
+        const temLink = cfg.ignorar_min_link && (URL_RE.test(m.texto) || extrairLinks(m.texto).length > 0);
+        URL_RE.lastIndex = 0;
+        if (!temArroba && !temLink) continue;
+      }
       const r = await julgarNucleo(bot, gid, titulo, Number(m.message_id), Number(m.user_id), `id:${m.user_id}`, m.texto, cfg, true);
       if (r.nivel && r.nivel !== 'baixo') { n++; porNivel[r.nivel] = (porNivel[r.nivel] || 0) + 1; }
       else if (r.nivel === 'baixo') { porNivel.baixo = (porNivel.baixo || 0) + 1; }

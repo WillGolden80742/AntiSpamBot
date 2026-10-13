@@ -3,7 +3,7 @@
 // settings.whitelist = { links: ['dominio.com'], assuntos: ['aviso da moderação'] }
 import { db } from '../../config/database.js';
 import { DEFAULT_SETTINGS } from './defaults.js';
-import { logEvent } from '../models/group.js';
+import { logEvent, getGroupTitle } from '../models/group.js';
 
 export function getWhitelist(gid) {
   try {
@@ -68,9 +68,11 @@ export function trechoPrompt(wl) {
 // ---- painel (Telegram) ----
 export function painelWhitelist(gid) {
   const wl = getWhitelist(gid);
+  const titulo = getGroupTitle(gid);
   const links = wl.links.length ? wl.links.map((l, i) => `${i + 1}. ${l}`).join('\n') : '(nenhum)';
   const assuntos = wl.assuntos.length ? wl.assuntos.map((a, i) => `${i + 1}. ${a}`).join('\n') : '(nenhum)';
   const head =
+    `👥 <b>${titulo}</b>\n\n` +
     `✅ <b>Whitelist</b> — links e assuntos que o Antispam sempre perdoa.\n\n` +
     `🔗 <b>Links permitidos (${wl.links.length})</b>\n${links}\n\n` +
     `💬 <b>Assuntos permitidos (${wl.assuntos.length})</b>\n${assuntos}\n\n` +

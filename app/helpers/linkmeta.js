@@ -3,7 +3,7 @@
 // (ex.: lance.com.br/sites-de-apostas/…) NÃO tornam o link suspeito.
 // Suspeito = TLD ruim, encurtador, IP, punycode, muitos hífens, convite t.me/+,
 // ou caminho de aposta/golpe em domínio DESCONHECIDO.
-export const URL_RE = /https?:\/\/[^\s<>"')\]]+|www\.[^\s<>"')\]]+|t\.me\/[^\s<>"')\]]+/gi;
+export const URL_RE = /https?:\/\/[^\s<>"')\]]+|www\.[^\s<>"')\]]+|t\.me\/[^\s<>"')\]]+|[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)+(?:\/[^\s<>"')\]]*)?/gi;
 
 export function extrairLinks(texto) {
   const t = String(texto || '').toLowerCase();
@@ -37,7 +37,7 @@ const TRUSTED = [
   'khanacademy.org', 'google.com', 'maps.google.com', 'docs.google.com', 'drive.google.com',
 ];
 // TLDs usados por golpe com frequência
-const SHADY_TLD = new Set(['xyz', 'top', 'vip', 'cc', 'pw', 'click', 'win', 'live', 'online', 'site', 'club', 'space', 'biz', 'tk', 'ml', 'ga', 'cf', 'gq', 'work', 'link', 'shop', 'icu', 'cyber', 'rest', 'monster', 'quest', 'cam', 'surf']);
+const SHADY_TLD = new Set(['xyz', 'top', 'vip', 'cc', 'pw', 'click', 'win', 'live', 'online', 'site', 'club', 'space', 'biz', 'tk', 'ml', 'ga', 'cf', 'gq', 'work', 'link', 'shop', 'icu', 'cyber', 'rest', 'monster', 'quest', 'cam', 'surf', 'ru']);
 const SHORTENERS = new Set(['bit.ly', 't.ly', 'tinyurl.com', 'is.gd', 'cutt.ly', 'goo.gl', 'ow.ly', 'rb.gy', 'rebrand.ly', 'shorturl.at', 'encurtador.com.br', 'trib.al', 'surl.li']);
 // tokens de aposta/golpe no caminho ou no domínio (evita falso positivo por
 // substring: 'alphabet' NÃO casa com 'bet'; só o token exato casa).

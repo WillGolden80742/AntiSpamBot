@@ -362,6 +362,13 @@ Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (se
 - **Whitelist** (`wl:`): domínios (`exemplo.com`) e assuntos (frases) que **furam o juiz** — nem são analisados. Gerencie no painel ou no privado (fluxo `pending.js`, `cancelar` desiste). Ideal p/ links oficiais do grupo e avisos da moderação.
 - **Regras** (`cens_ver/cens_editar`, `/regras`, `/definir_regras`): texto humano exibido no painel do antispam como *critério*. Não é regex — é referência p/ admins e membros.
 - **Tolerância** (`sem_tol`, default **65%**, clamp 0–100) + **`Regex texto`** (`sem_regex`, default **ligado**): com o regex desligado, os 71 padrões somem e valem só metadados de link + modelo local (ideal p/ grupos que só querem pegar link de aposta/golpe sem filtrar texto). `Baixo 50%` = rigoroso (pune mais) · `Médio 65%` · `Alto 80%` = perdoa mais · `Personalizar` (grade 10–90; o handler aceita 0–100). Com o regex ligado, severo **sempre** pune independente da tolerância (salvo veto `pct<15`). **Modelo puro sem regex** só pune acima de `modelo_min` (faixa 50–100; 90 vindo do `getSemCfg`, 95 no fallback interno) — abaixo disso vira só 🟡 log. Ação final efetiva em grupos novos: semântico `mute` (seed), alfabetos `ban` (o fallback do código quando o campo falta é `ban` nos dois).
+- **Mínimo de Caracteres no Antispam** (`sem_min`, default **30** caracteres, opções: `Desativado (0)`, `10`, `20`, `30`, `40`, `50`, `60`, `100`):
+  - Mensagens com quantidade de caracteres menor que o limite configurado são descartadas e não passam pela análise do antispam.
+  - **Exceção `Ignorar regra quando tiver @`** (`sem_min_arroba`): quando ativa, qualquer mensagem contendo `@` (ex: menção ou arroba) é forçada a passar pela análise de spam, mesmo que seja menor que o mínimo de caracteres.
+  - **Exceção `Ignorar regra quando tiver link`** (`sem_min_link`): quando ativa, qualquer mensagem contendo link é forçada a passar pela análise de spam, mesmo que seja menor que o mínimo de caracteres.
+  - **Detecção de links inteligentes:** reconhece links com ou sem protocolo (`http/https/www/t.me` e domínios diretos como `virus.aposta.betnacional.ru` ou `1.d`), ignorando pontuações gramaticais de final de frase (ex: `"Boa noite."`).
+  - **Exclusividade:** este filtro de caracteres atua estritamente no motor Antispam; o motor de **Alfabetos** não sofre restrição de tamanho de mensagem.
+- **Nome do Grupo em Negrito nos Menus:** Todos os menus e submenus inline (Hub principal, Antispam, Mínimo de Caracteres, Tolerância, Whitelist, Alfabetos, Detalhes de Alfabeto e Exceções) exibem o nome do grupo configurado em negrito no topo (`👥 <b>Nome do Grupo</b>`).
 
 ---
 

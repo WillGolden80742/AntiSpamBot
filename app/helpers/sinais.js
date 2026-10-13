@@ -4,6 +4,7 @@
 // Links: julgados por METADADOS (domínio/TLD/caminho) em linkmeta.js — ver analisarSinais.
 import { extrairLinks as _extrairLinks, analisarLinks, URL_RE } from './linkmeta.js';
 export const extrairLinks = _extrairLinks;
+export { URL_RE };
 export function normalizar(s) {
   let t = String(s || '').toLowerCase();
   try { t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch {}

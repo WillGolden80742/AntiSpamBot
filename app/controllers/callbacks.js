@@ -9,7 +9,7 @@ import { setPendente } from '../helpers/pending.js';
 import { getWhitelist, painelWhitelist, removerWlItem } from '../helpers/whitelist.js';
 import { getRegrasTexto } from '../helpers/regras.js';
 import { getProgressivoCfg, ALFA_NOME, EXCETO_KEYS, normExcecoes, normSelecao, selecaoAtiva } from './alfabetos.js';
-import { getSemCfg, saveSemCfg, painelSemantico, painelTolerancia, painelTolNumeros, varreduraGrupo } from './semantico.js';
+import { getSemCfg, saveSemCfg, painelSemantico, painelTolerancia, painelTolNumeros, painelMinChars, varreduraGrupo } from './semantico.js';
 import { db } from '../../config/database.js';
 
 const META = {
@@ -202,6 +202,7 @@ function resumoComportamento(cfg, prog, exc) {
 function alfabetoDetalhePanel(gid, key) {
   const a = ALFABETOS.find((x) => x.key === key);
   if (!a) return alfabetosPanel(gid);
+  const titulo = groupOf(gid)?.title || String(gid);
   const raw = getMod(gid, 'alfabetos');
   const cur = normSelecao(raw[key]);
   const prog = getProgressivoCfg(raw);
@@ -216,6 +217,7 @@ function alfabetoDetalhePanel(gid, key) {
     obs = ' (apenas remoção — sem banimento, sem contagem de avisos, mesmo com passo a passo ligado)';
   }
   const head =
+    `👥 <b>${titulo}</b>\n\n` +
     `${a.listEmoji} <b>${a.name}</b> — marque o que fazer quando alguém escrever nisso:\n` +
     `Hoje: <b>${hoje}</b>${obs}` +
     `\n\nToque para marcar/desmarcar. <b>Desativar</b> limpa tudo.`;
@@ -238,9 +240,11 @@ function alfabetoDetalhePanel(gid, key) {
 function alfabetosPanel(gid) {
   const cfg = getAlfabetos(gid);
   const raw = getMod(gid, 'alfabetos');
+  const titulo = groupOf(gid)?.title || String(gid);
   const prog = getProgressivoCfg(raw);
   const exc = normExcecoes(raw.exceto_nao_ocidental);
   const head =
+    `👥 <b>${titulo}</b>\n\n` +
     '🔤 <b>Alfabetos</b>\n' +
     'O que o bot faz quando alguém escreve nesses alfabetos. Toque num alfabeto e marque: deletar, silenciar, banir e/ou passo a passo.\n\n' +
     `📌 <b>O que acontece hoje</b>\n${resumoComportamento(cfg, prog, exc)}`;
@@ -307,8 +311,10 @@ function panel(gid) {
 // Submenu de exceções do catch-all "Não ocidental".
 function excetoPanel(gid) {
   const c = getMod(gid, 'alfabetos');
+  const titulo = groupOf(gid)?.title || String(gid);
   const exc = normExcecoes(c.exceto_nao_ocidental);
   const head =
+    `👥 <b>${titulo}</b>\n\n` +
     '➖ <b>Quem passa pela rede de proteção</b>\n' +
     'O "Não ocidental" bloqueia grego, hebraico, tailandês e outros. Exceções (liberações) abaixo.\n' +
     'Ex.: marcar Cirílico → russo passa (até com emoji junto); o resto continua bloqueado.\n\n' +
@@ -322,7 +328,8 @@ function excetoPanel(gid) {
 }
 function menuText(gid) {
   const g = groupOf(gid);
-  return `CONFIGURAÇÕES\nGrupo: ${g?.title ?? gid}\n\nSelecione o motor que deseja configurar.`;
+  const titulo = g?.title ?? gid;
+  return `👥 <b>${titulo}</b>\n\n<b>CONFIGURAÇÕES</b>\nSelecione o motor que deseja configurar.`;
 }
 function hubPanel(gid) {
   return { text: menuText(gid), reply_markup: settingsKeyboard(gid) };
@@ -613,6 +620,56 @@ export function registerCallbacks(bot) {
         saveSemCfg(gid, cfg);
         const p = painelSemantico(gid); await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id, { text: `Tolerância: ${cfg.tolerancia}%` }).catch(() => {});
+        return;
+      } else if (data.startsWith('sem_min:')) {
+        // Abre painel de Mínimo de Caracteres
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        const p = painelMinChars(gid); await edit(p.text, p.reply_markup);
+        return;
+      } else if (data.startsWith('sem_min_set:')) {
+        // Define o valor do mínimo de caracteres (0, 10, 20, 30, 40, 50, 60, 100)
+        const [, gid, val] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const n = Number(val);
+        if (!Number.isFinite(n) || n < 0) {
+          await bot.answerCallbackQuery(q.id, { text: 'Valor inválido.' }).catch(() => {});
+          return;
+        }
+        const cfg = getSemCfg(gid);
+        cfg.minimo_chars = Math.round(n);
+        saveSemCfg(gid, cfg);
+        const p = painelMinChars(gid); await edit(p.text, p.reply_markup);
+        const msgTxt = n === 0 ? 'Mínimo de caracteres desativado.' : `Mínimo de caracteres definido: ${n}`;
+        await bot.answerCallbackQuery(q.id, { text: msgTxt }).catch(() => {});
+        return;
+      } else if (data.startsWith('sem_min_arroba:')) {
+        // Toggle da exceção de @
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        const cfg = getSemCfg(gid);
+        cfg.ignorar_min_arroba = !cfg.ignorar_min_arroba;
+        saveSemCfg(gid, cfg);
+        const p = painelMinChars(gid); await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id, {
+          text: cfg.ignorar_min_arroba
+            ? 'Ativado: mensagens curtas com @ serão analisadas.'
+            : 'Desativado: mensagens curtas com @ serão ignoradas.',
+        }).catch(() => {});
+        return;
+      } else if (data.startsWith('sem_min_link:')) {
+        // Toggle da exceção de link
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        const cfg = getSemCfg(gid);
+        cfg.ignorar_min_link = !cfg.ignorar_min_link;
+        saveSemCfg(gid, cfg);
+        const p = painelMinChars(gid); await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id, {
+          text: cfg.ignorar_min_link
+            ? 'Ativado: mensagens curtas com link serão analisadas.'
+            : 'Desativado: mensagens curtas com link serão ignoradas.',
+        }).catch(() => {});
         return;
       } else if (data.startsWith('cens_ver:')) {
         const gid = data.split(':')[1];
