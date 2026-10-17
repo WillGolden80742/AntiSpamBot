@@ -169,7 +169,11 @@ function erroPunicaoAmigavel(d) {
 //   - score==0: o modelo sozinho decide — pct>tolerância → médio; pct>=50 → baixo.
 // Salvaguarda para mensagens benignas frequentes e avisos de membros sobre golpes
 function ehAvisoOuConversaLegitima(texto) {
-  const low = String(texto || '').toLowerCase();
+  const low = String(texto || '').trim().toLowerCase();
+  // Valores numéricos ou monetários isolados (ex: "R$ 121.400", "R$ 50,00", "$100", "50 reais", ou número único com até 1 separador de milhar/decimal como "121.400" ou "1.500")
+  if (/^(?:r\$|us\$|\$|€)\s*[0-9.,]+$/i.test(low)) return true;
+  if (/^[0-9.,]+\s*(?:reais|dolares|dólares|euros)$/i.test(low)) return true;
+  if (/^[0-9]+(?:[.,][0-9]{1,3})?$/i.test(low)) return true;
   if (/fake.*(ad|giveaway)|falso.*(anuncio|sorteio)|golpe.*(cuidado|don't|be careful)|cuidado.*golpe/i.test(low)) return true;
   if (/enem\.inep\.gov\.br|rastreamento\.correios\.com\.br/i.test(low)) return true;
   if (/sem correntes e sem propaganda/i.test(low)) return true;

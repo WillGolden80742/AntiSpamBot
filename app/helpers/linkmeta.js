@@ -3,12 +3,26 @@
 // (ex.: lance.com.br/sites-de-apostas/…) NÃO tornam o link suspeito.
 // Suspeito = TLD ruim, encurtador, IP, punycode, muitos hífens, convite t.me/+,
 // ou caminho de aposta/golpe em domínio DESCONHECIDO.
-export const URL_RE = /https?:\/\/[^\s<>"')\]]+|www\.[^\s<>"')\]]+|t\.me\/[^\s<>"')\]]+|[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)+(?:\/[^\s<>"')\]]*)?/gi;
+// Regex aprimorada de URL:
+// 1. Protocolo explícito (http/https/ftp)
+// 2. www. ou t.me/
+// 3. IPv4 com exatamente 4 octetos de 0 a 255 (ex: 192.168.1.1)
+// 4. Domínios diretos terminados em TLD alfabético de 2+ letras (ex: site.com, bet.ru)
+const PROTO_RE = /https?:\/\/[^\s<>"')\]]+|www\.[^\s<>"')\]]+|t\.me\/[^\s<>"')\]]+/i;
+const IP_RE = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\d+)?(?:\/[^\s<>"')\]]*)?/i;
+const DOMAIN_RE = /\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s<>"')\]]*)?/i;
+
+export const URL_RE = new RegExp(
+  `${PROTO_RE.source}|${IP_RE.source}|${DOMAIN_RE.source}`,
+  'gi'
+);
 
 export function extrairLinks(texto) {
   const t = String(texto || '').toLowerCase();
-  const out = t.match(URL_RE) || [];
-  return [...new Set(out)].slice(0, 10);
+  const rawMatches = t.match(URL_RE) || [];
+  // Limpa pontuações finais comuns como ponto ou vírgula no final da frase
+  const clean = rawMatches.map((m) => m.replace(/[.,;:!?]+$/, '')).filter(Boolean);
+  return [...new Set(clean)].slice(0, 10);
 }
 
 // Domínios confiáveis (notícia, gov, tech, banco, loja real). *.gov.br entra por sufixo.
