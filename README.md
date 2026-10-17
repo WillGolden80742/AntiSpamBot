@@ -28,10 +28,11 @@
 12. [Rodando o bot](#12-rodando-o-bot)
 13. [Treinamento (`bin/treinar.js`)](#13-treinamento-bintreinarjs)
 14. [Whitelist, Regras e Tolerância](#14-whitelist-regras-e-tolerância)
-15. [Trava de dono e segurança](#15-trava-de-dono-e-segurança)
-16. [Logs, backups e troubleshooting](#16-logs-backups-e-troubleshooting)
-17. [Scripts NPM](#17-scripts-npm)
-18. [Roadmap / ideias](#18-roadmap--ideias)
+ 15. [Trava de dono e segurança](#15-trava-de-dono-e-segurança)
+ 16. [Logs, backups e troubleshooting](#16-logs-backups-e-troubleshooting)
+ 17. [Scripts NPM](#17-scripts-npm)
+ 18. [Roadmap / ideias](#18-roadmap--ideias)
+ 19. [Manual do usuário (com demonstração)](#19-manual-do-usuário-com-demonstração)
 
 ---
 
@@ -434,6 +435,65 @@ Pipeline (todo local, sem rede, otimizado para não sobrecarregar memória RAM):
 - [ ] Rate-limit / antiflood (mensagens repetidas em janela curta).
 - [ ] Comando `/stats` (warns + events por grupo/usuário).
 - [ ] i18n do painel do Telegram (PT/EN/ES, acompanhando o motor).
+
+---
+
+## 19. Manual do usuário (com demonstração)
+
+Passo a passo com as telas reais do bot. Imagens de demonstração em `app/assets/images/`.
+
+### 19.1 Abrir as configurações
+
+No grupo, envie `/settings`. Depois abra a conversa privada com o bot e envie `/settings` de novo (ou toque em "Abrir em chat privado"). Escolha o grupo na lista:
+
+![Selecionar grupo](app/assets/images/01-settings-selecionar-grupo.png)
+
+> Se o grupo não aparecer: você precisa ser admin dele, o bot precisa estar no grupo como admin, e vale enviar `/reload` dentro do grupo e tentar de novo.
+
+### 19.2 O hub (menu principal)
+
+No privado, o hub mostra os 2 motores. Toque para entrar em cada um; `✅ Concluir` fecha:
+
+![Hub de configurações](app/assets/images/02-hub-configuracoes.png)
+
+### 19.3 Motor Alfabetos
+
+Define o que acontece quando alguém escreve em árabe, cirílico, chinês, hindi, bengali, não ocidental ou latim. O topo resume "O que acontece hoje"; abaixo, cada escrita com seu estado; depois "Como punir" (passo a passo, ação final, avisos, ADM, teste, OCR). No fim: `👥 Warns & Bans (Alfabetos)` abre a lista de punidos **deste motor**:
+
+![Painel Alfabetos](app/assets/images/03-alfabetos-painel.png)
+
+Dicas que a tela mostra:
+- **Latim = português** — só ligue se quiser apagar português também.
+- **Não ocidental** é a rede de proteção (grego, hebraico, tailandês…). Emoji sozinho nunca pune.
+- Dá para combinar: Deletar + Silenciar, Deletar + Banir ou só uma. Só o **Progressivo** usa avisos.
+
+### 19.4 Detalhe de um alfabeto (ex.: Árabe)
+
+Toque no alfabeto e marque o que fazer: `🗑 Deletar`, `🔇 Silenciar`, `🚫 Banir` e/ou `▶️ Progressivo`. `⏸ Desativar` limpa tudo. Progressivo mostra `avisos + ação final` (ex.: `3x + Ban`):
+
+![Detalhe do Árabe](app/assets/images/04-alfabeto-detalhe-arabe.png)
+
+### 19.5 Motor Antispam
+
+Liga/desliga a varredura em tempo real (regex + modelo local), mostra as 📜 regras, o estado de hoje (níveis, tolerância, regex, mínimo de caracteres, ação final, avisos, whitelist) e os botões. No fim: `👥 Warns & Bans (Antispam)` abre a lista de punidos **deste motor**:
+
+![Painel Antispam](app/assets/images/05-antispam-painel.png)
+
+### 19.6 Mínimo de Caracteres
+
+Mensagens mais curtas que o limite são ignoradas pelo antispam. As exceções `quando tiver @` e `quando tiver link` forçam a análise mesmo em mensagem curta:
+
+![Mínimo de Caracteres](app/assets/images/06-antispam-minimo-caracteres.png)
+
+### 19.7 Tolerância
+
+Até quanto o modelo deixa passar: **Baixo (50%)** = rigoroso, pune mais; **Alto (80%)** = perdoa mais; **Personalizar** abre a grade 10–90:
+
+![Tolerância](app/assets/images/07-antispam-tolerancia.png)
+
+### 19.8 Listas de Warns & Bans (por motor)
+
+Cada motor tem sua lista: mostra **só quem tem pendência naquele motor** (nome primeiro, badges `⚠️ warns` / `🚫 bans`), com ordem `📜 Ver antigos` / `🕒 Ver recentes`, busca `🔍 Pesquisar` (username, nome ou ID) e paginação. No Antispam, nomes não ocidentais ficam por último (🌐); no Alfabetos não há essa separação. Tocando no usuário: status no grupo, histórico do motor e botões `⚠️ Zerar Warns (motor)`, `🔓 Desbanir / Desmutar`, `🔇 Mutar` e `🚫 Banir` (os dois últimos são ação direta do admin, fora da escada).
 
 ---
 
