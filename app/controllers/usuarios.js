@@ -38,7 +38,32 @@ export function getFiltroLista(chatId, gid) {
   return filtrosLista.get(`${chatId}:${gid}`) || { busca: '', ordem: 'recentes' };
 }
 
-// Nome com caractere fora do repertório ocidental/latino = última prioridade na lista.
+// Monta o filtro de busca com LIKE %termo% de verdade:
+// - ID exato OU parcial (digita parte do número e acha)
+// - username, first_name, last_name OU nome completo "first + last" (ex.: "Free Willy")
+// - case-insensitive (COLLATE NOCASE), com escape de %, _ e \ do termo
+function escLike(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+function filtroBusca(termo) {
+  const t = String(termo || '').trim().replace(/^@/, '');
+  if (!t) return { where: '', params: [] };
+  if (/^\d+$/.test(t)) {
+    return {
+      where: `WHERE (u.user_id = ? OR CAST(u.user_id AS TEXT) LIKE ? ESCAPE '\\')`,
+      params: [Number(t), `%${t}%`],
+    };
+  }
+  const lk = `%${escLike(t)}%`;
+  return {
+    where: `WHERE (usr.username LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR usr.first_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR usr.last_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR (COALESCE(usr.first_name,'') || ' ' || COALESCE(usr.last_name,'')) LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR CAST(u.user_id AS TEXT) LIKE ? ESCAPE '\\')`,
+    params: [lk, lk, lk, lk, lk],
+  };
+}
 const NAO_OCIDENTAL_RE = /[^\u0000-\u024F\u0300-\u036F\u1D00-\u1DBF\u1E00-\u1EFF\u2C60-\u2C7F\uA720-\uA7FF\uAB30-\uAB6F]/;
 const TEM_LETRA_NUM = /[\p{L}\p{N}]/u;
 export function ehNomeNaoOcidental(nome) {
@@ -58,19 +83,9 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
   const cfg = cfgMotor(motor);
   const banCond = `(${cfg.banKinds.join(' OR ')})`;
 
-  let whereFiltro = '';
-  const paramsFiltro = [gStr, cfg.warnLike, gStr];
-
-  if (termo) {
-    if (/^\d+$/.test(termo)) {
-      whereFiltro = 'WHERE u.user_id = ?';
-      paramsFiltro.push(Number(termo));
-    } else {
-      whereFiltro = 'WHERE (usr.username LIKE ? OR usr.first_name LIKE ? OR usr.last_name LIKE ?)';
-      const lk = `%${termo}%`;
-      paramsFiltro.push(lk, lk, lk);
-    }
-  }
+  const fb = filtroBusca(termo);
+  const whereFiltro = fb.where;
+  const paramsFiltro = [gStr, cfg.warnLike, gStr, ...fb.params];
 
   // Contagem total (só quem tem pendência NO MOTOR)
   const countSql = `
@@ -85,22 +100,14 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
   `;
   const total = db.prepare(countSql).get(...paramsFiltro)?.total || 0;
 
-  // Busca TODOS os candidatos com o filtro e ordena em JS:
-  // ocidentais primeiro (recentes ou antigos), não ocidentais sempre por último.
+  const fb2 = filtroBusca(termo);
   const queryParams = [
     gStr, cfg.warnLike, // base u (warns)
     gStr,               // base u (events)
     gStr, cfg.warnLike, // w
     gStr,               // b
+    ...fb2.params,
   ];
-  if (termo) {
-    if (/^\d+$/.test(termo)) {
-      queryParams.push(Number(termo));
-    } else {
-      const lk = `%${termo}%`;
-      queryParams.push(lk, lk, lk);
-    }
-  }
 
   const sql = `
     SELECT
