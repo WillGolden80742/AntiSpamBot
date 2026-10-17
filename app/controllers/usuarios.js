@@ -131,10 +131,13 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
   `;
 
   const todos = db.prepare(sql).all(...queryParams);
-  // Nome exibido + flag não ocidental (calculados aqui p/ ordenar sem nova query)
+  // Nome exibido + flag não ocidental (calculados aqui p/ ordenar sem nova query).
+  // A separação 🌐 por último vale SÓ p/ o Antispam — na lista de Alfabetos
+  // ela não se aplica (os infratores de alfabeto SÃO os não ocidentais).
+  const separaNaoOci = cfg.chave !== 'alfabeto';
   for (const u of todos) {
     u._nome = formatarNomeUsuario(u, u.user_id);
-    u._naoOci = ehNomeNaoOcidental(u._nome);
+    u._naoOci = separaNaoOci ? ehNomeNaoOcidental(u._nome) : false;
   }
   const cmpData = (a, b) => {
     const da = a.ultima_atividade || '';
@@ -234,7 +237,7 @@ export async function painelListaUsuarios(gid, pagina = 0, busca = '', ordem = '
 
   let head = `👥 <b>${titulo}</b>\n\n`;
   head += `${cfg.emoji} <b>Warns & Bans — ${cfg.nome}</b>\n`;
-  head += `Ordem: <b>${ordReal === 'antigos' ? 'mais antigos' : 'mais recentes'}</b> · 🌐 não ocidentais por último\n`;
+  head += `Ordem: <b>${ordReal === 'antigos' ? 'mais antigos' : 'mais recentes'}</b>${cfg.chave === 'sem' ? ' · 🌐 não ocidentais por último' : ''}\n`;
   if (termo) {
     head += `🔍 Filtro atual: <code>${termo}</code> (${total} encontrado(s))\n`;
   } else if (total) {
