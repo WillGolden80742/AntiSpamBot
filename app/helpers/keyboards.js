@@ -3,7 +3,7 @@ export function settingsKeyboard(gid) {
   return {
     inline_keyboard: [
       [{ text: '🔤 Alfabetos', callback_data: `mod_alfa:${gid}` }, { text: '🛡 Antispam', callback_data: `ai:${gid}` }],
-      [{ text: '👥 Usuários (Warns & Bans)', callback_data: `usr_list:${gid}:0` }],
+      [{ text: '👥 Usuários (Warns & Bans)', callback_data: `usr_open:${gid}` }],
       [{ text: '✅ Concluir', callback_data: `done:${gid}` }],
     ],
   };

@@ -728,6 +728,16 @@ export function registerCallbacks(bot) {
         removerWlItem(gid, 'assunto', idx);
         const p = painelWhitelist(gid); await edit(p.text, p.reply_markup);
         return;
+      } else if (data.startsWith('usr_open:')) {
+        // Entrada pela hub: SEMPRE lista completa (limpa busca presa), preserva ordem.
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        setFiltroLista(q.message.chat.id, gid, { busca: '' });
+        const f = getFiltroLista(q.message.chat.id, gid);
+        const p = await painelListaUsuarios(gid, 0, '', f.ordem, bot);
+        await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id).catch(() => {});
+        return;
       } else if (data.startsWith('usr_list:')) {
         const [, gid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
