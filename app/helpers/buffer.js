@@ -22,25 +22,32 @@ export function garantirTabela() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_log_grupo_tempo ON messages_log(group_id, criado_em)`);
 }
 
+// Guarda/atualiza o perfil conhecido do usuário (cache p/ exibir nomes na lista).
+// Chamada em todo evento de grupo (tempo real, edições, varredura) — nunca joga exceção.
+export function salvarPerfilUsuario(from) {
+  try {
+    if (!from?.id) return;
+    db.prepare(`
+      INSERT INTO users (id, username, first_name, last_name, atualizado_em)
+      VALUES (?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET
+        username = excluded.username,
+        first_name = excluded.first_name,
+        last_name = excluded.last_name,
+        atualizado_em = excluded.atualizado_em
+    `).run(
+      Number(from.id),
+      from.username || null,
+      from.first_name || null,
+      from.last_name || null
+    );
+  } catch {}
+}
+
 export function registrarMensagem(msg) {
   try {
     if (!msg?.chat || !['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (msg.from?.id) {
-      db.prepare(`
-        INSERT INTO users (id, username, first_name, last_name, atualizado_em)
-        VALUES (?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(id) DO UPDATE SET
-          username = excluded.username,
-          first_name = excluded.first_name,
-          last_name = excluded.last_name,
-          atualizado_em = excluded.atualizado_em
-      `).run(
-        Number(msg.from.id),
-        msg.from.username || null,
-        msg.from.first_name || null,
-        msg.from.last_name || null
-      );
-    }
+    if (msg.from?.id) salvarPerfilUsuario(msg.from);
     if (!msg.message_id) return;
     const texto = String(msg.text || msg.caption || '').slice(0, 2000);
     if (!texto || texto.startsWith('/')) return; // comandos fora do buffer

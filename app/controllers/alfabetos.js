@@ -24,6 +24,7 @@ import https from 'node:https';
 import http from 'node:http';
 import { getModule, logEvent } from '../models/group.js';
 import { ensureBotPerm, targetIsStaff, isAnonymousAdmin } from '../helpers/admin.js';
+import { salvarPerfilUsuario } from '../helpers/buffer.js';
 import { db } from '../../config/database.js';
 
 export const ALFA_REGEX = {
@@ -699,6 +700,7 @@ export async function verificarMensagemAlfabeto(bot, msg) {
     if (!msg.chat || !['group', 'supergroup'].includes(msg.chat.type)) { resultado = 'ignorado'; }
     else if (msg.from?.is_bot) { resultado = 'ignorado'; }
     else {
+      if (msg.from?.id) salvarPerfilUsuario(msg.from); // cache de nomes p/ lista de usuários
       let txt = String(msg.text || msg.caption || '').trim();
       // ignora comandos no texto direto (evita punir /settings etc. pelo latim)
       if (txt.startsWith('/')) { resultado = 'ignorado'; }

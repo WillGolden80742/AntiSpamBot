@@ -5,12 +5,12 @@
 import { logEvent } from '../models/group.js';
 import { settingsKeyboard } from '../helpers/keyboards.js';
 import { senderIsAdmin } from '../helpers/admin.js';
-import { setPendente } from '../helpers/pending.js';
+import { setPendente, getPendente } from '../helpers/pending.js';
 import { getWhitelist, painelWhitelist, removerWlItem } from '../helpers/whitelist.js';
 import { getRegrasTexto } from '../helpers/regras.js';
 import { getProgressivoCfg, ALFA_NOME, EXCETO_KEYS, normExcecoes, normSelecao, selecaoAtiva } from './alfabetos.js';
 import { getSemCfg, saveSemCfg, painelSemantico, painelTolerancia, painelTolNumeros, painelMinChars, varreduraGrupo } from './semantico.js';
-import { painelListaUsuarios, painelDetalhesUsuario, zerarWarnsUsuario, desbanirUsuario } from './usuarios.js';
+import { painelListaUsuarios, painelDetalhesUsuario, zerarWarnsUsuario, desbanirUsuario, getFiltroLista, setFiltroLista } from './usuarios.js';
 import { db } from '../../config/database.js';
 
 const META = {
@@ -732,13 +732,42 @@ export function registerCallbacks(bot) {
         const [, gid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
-        const p = painelListaUsuarios(gid, pag, '');
+        const f = getFiltroLista(q.message.chat.id, gid);
+        const p = await painelListaUsuarios(gid, pag, f.busca, f.ordem, bot);
+        await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id).catch(() => {});
+        return;
+      } else if (data.startsWith('usr_ord:')) {
+        // Toggle recentes ↔ antigos (preserva busca, volta p/ página 0).
+        const [, gid, novaOrd] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const ord = novaOrd === 'antigos' ? 'antigos' : 'recentes';
+        setFiltroLista(q.message.chat.id, gid, { ordem: ord });
+        const f = getFiltroLista(q.message.chat.id, gid);
+        const p = await painelListaUsuarios(gid, 0, f.busca, f.ordem, bot);
+        await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id, { text: ord === 'antigos' ? 'Ordem: mais antigos primeiro' : 'Ordem: mais recentes primeiro' }).catch(() => {});
+        return;
+      } else if (data.startsWith('usr_clear:')) {
+        // Limpa a busca e volta p/ lista completa (preserva ordem).
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        setFiltroLista(q.message.chat.id, gid, { busca: '' });
+        const f = getFiltroLista(q.message.chat.id, gid);
+        const p = await painelListaUsuarios(gid, 0, '', f.ordem, bot);
         await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id).catch(() => {});
         return;
       } else if (data.startsWith('usr_search:')) {
         const gid = data.split(':')[1];
         if (!(await canEdit(bot, q, gid))) return;
+        // Anti-duplo clique: o listener de edição também trata — este só arma o pendente.
+        // Se já houver busca pendente aberta, não reenvia a pergunta (evita msg duplicada).
+        const existente = getPendente(q.message.chat.id, q.from.id);
+        if (existente?.tipo === 'buscar_usuario' && existente?.gid === String(gid)) {
+          await bot.answerCallbackQuery(q.id).catch(() => {});
+          return;
+        }
         setPendente(q.message.chat.id, q.from.id, { gid, tipo: 'buscar_usuario' });
         await bot.sendMessage(
           q.message.chat.id,

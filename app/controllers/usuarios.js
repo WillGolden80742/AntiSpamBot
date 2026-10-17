@@ -5,11 +5,37 @@ import { ensureBotPerm } from '../helpers/admin.js';
 
 export const ITENS_POR_PAGINA = 6;
 
+// Filtro ativo da lista por conversa (preserva busca ao paginar/trocar ordem).
+// chave `${chatId}:${gid}` → { busca, ordem }
+const filtrosLista = new Map();
+export function setFiltroLista(chatId, gid, filtro = {}) {
+  const k = `${chatId}:${gid}`;
+  const cur = filtrosLista.get(k) || { busca: '', ordem: 'recentes' };
+  filtrosLista.set(k, {
+    busca: filtro.busca ?? cur.busca ?? '',
+    ordem: filtro.ordem === 'antigos' ? 'antigos' : filtro.ordem === 'recentes' ? 'recentes' : (cur.ordem || 'recentes'),
+  });
+}
+export function getFiltroLista(chatId, gid) {
+  return filtrosLista.get(`${chatId}:${gid}`) || { busca: '', ordem: 'recentes' };
+}
+
+// Nome com caractere fora do repertório ocidental/latino = última prioridade na lista.
+const NAO_OCIDENTAL_RE = /[^\u0000-\u024F\u0300-\u036F\u1D00-\u1DBF\u1E00-\u1EFF\u2C60-\u2C7F\uA720-\uA7FF\uAB30-\uAB6F]/;
+const TEM_LETRA_NUM = /[\p{L}\p{N}]/u;
+export function ehNomeNaoOcidental(nome) {
+  const t = String(nome || '');
+  if (!NAO_OCIDENTAL_RE.test(t)) return false;
+  const resto = [...t].filter((ch) => NAO_OCIDENTAL_RE.test(ch)).join('');
+  return TEM_LETRA_NUM.test(resto);
+}
+
 // Retorna lista paginada e contagem de usuários com dados no grupo (warns, punições ou mensagens)
-export function listarUsuariosGrupo(gid, pagina = 0, busca = '') {
+// ordem: 'recentes' (última atividade DESC) | 'antigos' (ASC). Não ocidentais sempre por último.
+export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recentes') {
   const gStr = String(gid);
-  const offset = Math.max(0, pagina) * ITENS_POR_PAGINA;
   const termo = String(busca || '').trim().replace(/^@/, '');
+  const ord = ordem === 'antigos' ? 'antigos' : 'recentes';
 
   let whereFiltro = '';
   const paramsFiltro = [gStr, gStr, gStr];
@@ -40,7 +66,8 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '') {
   `;
   const total = db.prepare(countSql).get(...paramsFiltro)?.total || 0;
 
-  // Consulta paginada
+  // Busca TODOS os candidatos com o filtro e ordena em JS:
+  // ocidentais primeiro (recentes ou antigos), não ocidentais sempre por último.
   const queryParams = [
     gStr, gStr, gStr, // base u
     gStr,             // w
@@ -55,10 +82,9 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '') {
       queryParams.push(lk, lk, lk);
     }
   }
-  queryParams.push(ITENS_POR_PAGINA, offset);
 
   const sql = `
-    SELECT 
+    SELECT
       u.user_id,
       usr.username,
       usr.first_name,
@@ -90,12 +116,30 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '') {
       FROM messages_log WHERE group_id = ? AND user_id > 0 GROUP BY user_id
     ) m ON m.user_id = u.user_id
     ${whereFiltro}
-    ORDER BY total_warns DESC, total_bans DESC, ultima_atividade DESC
-    LIMIT ? OFFSET ?
   `;
 
-  const usuarios = db.prepare(sql).all(...queryParams);
-  return { usuarios, total, pagina, termo };
+  const todos = db.prepare(sql).all(...queryParams);
+  // Nome exibido + flag não ocidental (calculados aqui p/ ordenar sem nova query)
+  for (const u of todos) {
+    u._nome = formatarNomeUsuario(u, u.user_id);
+    u._naoOci = ehNomeNaoOcidental(u._nome);
+  }
+  const cmpData = (a, b) => {
+    const da = a.ultima_atividade || '';
+    const db2 = b.ultima_atividade || '';
+    if (!da && !db2) return 0;
+    if (!da) return 1;   // sem data sempre por último, nas duas ordens
+    if (!db2) return -1;
+    return ord === 'antigos' ? (da < db2 ? -1 : da > db2 ? 1 : 0) : (da > db2 ? -1 : da < db2 ? 1 : 0);
+  };
+  const ocidentais = todos.filter((u) => !u._naoOci).sort(cmpData);
+  const naoOci = todos.filter((u) => u._naoOci).sort(cmpData);
+  const ordenados = [...ocidentais, ...naoOci];
+
+  const totalPaginas = Math.ceil(ordenados.length / ITENS_POR_PAGINA) || 1;
+  const pagAtual = Math.min(Math.max(0, Number(pagina) || 0), totalPaginas - 1);
+  const usuarios = ordenados.slice(pagAtual * ITENS_POR_PAGINA, pagAtual * ITENS_POR_PAGINA + ITENS_POR_PAGINA);
+  return { usuarios, total: ordenados.length, pagina: pagAtual, termo, ordem: ord };
 }
 
 // Detalhes completos de um usuário específico no grupo
@@ -111,24 +155,66 @@ export function obterDetalhesUsuario(gid, uid) {
   return { perfil, warns, punicoes, ultimasMsgs };
 }
 
-// Formata nome legível do usuário
+// Formata nome legível do usuário — NOME primeiro (username vira detalhe).
+// Ex.: "João Silva (@joao)" · "Maria" · "@fulano" · "ID 123 (sem nome salvo)".
 export function formatarNomeUsuario(u, uid) {
-  if (u?.username) return `@${u.username}`;
   const partes = [u?.first_name, u?.last_name].filter(Boolean);
-  if (partes.length) return partes.join(' ');
-  return `ID: ${uid}`;
+  const nome = partes.length ? partes.join(' ') : '';
+  if (nome && u?.username) return `${nome} (@${u.username})`;
+  if (nome) return nome;
+  if (u?.username) return `@${u.username}`;
+  return `ID ${uid} (sem nome salvo)`;
 }
 
-// Painel principal da lista de usuários
-export function painelListaUsuarios(gid, pagina = 0, busca = '') {
+// Completa o cache de nomes da página atual via API (6 chamadas, rápido).
+// Sem isso, usuários antigos aparecem como "ID ... (sem nome salvo)".
+// Salva no banco p/ as próximas aberturas já virem com nome.
+export async function enriquecerPerfis(bot, gid, usuarios) {
+  if (!bot || !usuarios?.length) return;
+  const gStr = String(gid);
+  await Promise.allSettled(usuarios.map(async (u) => {
+    if (u.username || u.first_name) return;
+    try {
+      const m = await bot.getChatMember(gStr, Number(u.user_id));
+      const f = m?.user;
+      if (!f) return;
+      u.username = f.username || null;
+      u.first_name = f.first_name || null;
+      u.last_name = f.last_name || null;
+      try {
+        db.prepare(`
+          INSERT INTO users (id, username, first_name, last_name, atualizado_em)
+          VALUES (?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET
+            username = excluded.username,
+            first_name = excluded.first_name,
+            last_name = excluded.last_name,
+            atualizado_em = excluded.atualizado_em
+        `).run(Number(u.user_id), u.username, u.first_name, u.last_name);
+      } catch {}
+      u._nome = formatarNomeUsuario(u, u.user_id);
+      u._naoOci = ehNomeNaoOcidental(u._nome);
+    } catch {}
+  }));
+  // Reordena SÓ a página: ocidentais primeiro, 🌐 por último (separação visível
+  // mesmo antes do cache completar para todos os 109).
+  usuarios.sort((a, b) => (Number(!!a._naoOci) - Number(!!b._naoOci)));
+}
+
+// Painel principal da lista de usuários.
+// bot opcional (5º arg): se passado, completa os nomes da página via API e salva no cache.
+export async function painelListaUsuarios(gid, pagina = 0, busca = '', ordem = 'recentes', bot = null) {
   const gStr = String(gid);
   const titulo = getGroupTitle(gStr);
-  const { usuarios, total, termo } = listarUsuariosGrupo(gStr, pagina, busca);
+  const { usuarios, total, termo, ordem: ordReal } = listarUsuariosGrupo(gStr, pagina, busca, ordem);
+  if (bot) await enriquecerPerfis(bot, gStr, usuarios);
   const totalPaginas = Math.ceil(total / ITENS_POR_PAGINA) || 1;
-  const pagAtual = Math.min(Math.max(0, pagina), totalPaginas - 1);
+  const pagAtual = Math.min(Math.max(0, Number(pagina) || 0), totalPaginas - 1);
+  const temNaoOci = usuarios.some((u) => u._naoOci);
 
   let head = `👥 <b>${titulo}</b>\n\n`;
   head += `👤 <b>Gerenciamento de Usuários</b>\n`;
+  head += `Ordem: <b>${ordReal === 'antigos' ? 'mais antigos' : 'mais recentes'}</b> · 🌐 não ocidentais por último\n`;
   if (termo) {
     head += `🔍 Filtro atual: <code>${termo}</code> (${total} encontrado(s))\n`;
   } else {
@@ -140,22 +226,26 @@ export function painelListaUsuarios(gid, pagina = 0, busca = '') {
     head += `<i>Nenhum usuário encontrado para esta seleção.</i>`;
   } else {
     head += `Selecione um usuário para gerenciar warns e bans:`;
+    if (temNaoOci && usuarios.some((u) => u._naoOci)) head += `\n<i>🌐 = nome não ocidental (última prioridade)</i>`;
   }
 
   const rows = [];
   for (const u of usuarios) {
-    const nome = formatarNomeUsuario(u, u.user_id);
+    const nome = u._nome || formatarNomeUsuario(u, u.user_id);
     const badges = [];
     if (u.total_warns > 0) badges.push(`⚠️ ${u.total_warns}`);
     if (u.total_bans > 0) badges.push(`🚫 ${u.total_bans}`);
     const badgeTxt = badges.length ? ` [${badges.join(' ')}]` : '';
+    const prefixo = u._naoOci ? '🌐 ' : '';
+    let rotulo = `${prefixo}${nome}${badgeTxt}`;
+    if (rotulo.length > 60) rotulo = `${rotulo.slice(0, 57)}…`;
     rows.push([{
-      text: `${nome}${badgeTxt}`,
+      text: rotulo,
       callback_data: `usr_view:${gStr}:${u.user_id}:${pagAtual}`,
     }]);
   }
 
-  // Linha de navegação (ciclar)
+  // Linha de navegação (preserva busca + ordem ao paginar)
   const navRow = [];
   if (pagAtual > 0) {
     navRow.push({ text: '⬅️ Anterior', callback_data: `usr_list:${gStr}:${pagAtual - 1}` });
@@ -165,9 +255,12 @@ export function painelListaUsuarios(gid, pagina = 0, busca = '') {
   }
   if (navRow.length) rows.push(navRow);
 
-  // Ações de pesquisa e retorno
+  // Toggle de ordem + pesquisa + retorno
+  rows.push([
+    { text: ordReal === 'antigos' ? '🕒 Ver recentes' : '📜 Ver antigos', callback_data: `usr_ord:${gStr}:${ordReal === 'antigos' ? 'recentes' : 'antigos'}` },
+  ]);
   const actionRow = [
-    { text: termo ? '❌ Limpar busca' : '🔍 Pesquisar', callback_data: termo ? `usr_list:${gStr}:0` : `usr_search:${gStr}` },
+    { text: termo ? '❌ Limpar busca' : '🔍 Pesquisar', callback_data: termo ? `usr_clear:${gStr}` : `usr_search:${gStr}` },
     { text: '⬅️ Voltar ao Menu', callback_data: `open:${gStr}` },
   ];
   rows.push(actionRow);

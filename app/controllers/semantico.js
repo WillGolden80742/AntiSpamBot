@@ -17,7 +17,7 @@ import { getRegrasTexto, setRegrasTexto } from '../helpers/regras.js';
 import { getPendente, clearPendente } from '../helpers/pending.js';
 import { notificarFalha } from '../helpers/falhas.js';
 import { logNoGrupoADM } from './alfabetos.js';
-import { painelListaUsuarios } from './usuarios.js';
+import { painelListaUsuarios, setFiltroLista, getFiltroLista } from './usuarios.js';
 import { db } from '../../config/database.js';
 
 const FINAL_CYCLE = ['ban', 'mute', 'deletar'];
@@ -508,7 +508,9 @@ export function registerSemantico(bot) {
           ? `✅ Assunto permitido salvo: "${item.slice(0, 80)}".` : '❌ Não consegui salvar agora. Tente de novo em instantes.');
       } else if (p.tipo === 'buscar_usuario') {
         clearPendente(msg.chat.id, msg.from.id);
-        const painel = painelListaUsuarios(p.gid, 0, texto);
+        setFiltroLista(msg.chat.id, p.gid, { busca: texto });
+        const f = getFiltroLista(msg.chat.id, p.gid);
+        const painel = await painelListaUsuarios(p.gid, 0, f.busca, f.ordem, bot);
         await bot.sendMessage(msg.chat.id, painel.text, { reply_markup: painel.reply_markup, parse_mode: 'HTML' });
       }
     } catch (e) { console.error('[semantico:edits]', e.message); }
