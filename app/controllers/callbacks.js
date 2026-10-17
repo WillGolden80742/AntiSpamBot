@@ -278,6 +278,7 @@ function alfabetosPanel(gid) {
     `└ Avisa no grupo: ${onOff(prog.avisar_no_grupo)}\n` +
     `└ Registra nos ADMs: ${onOff(prog.log_no_admin_grupo)}\n` +
     `└ Testar com admins: ${onOff(prog.punir_staff)}\n` +
+    `└ Ler imagens: ${onOff(prog.ler_imagens)}\n` +
     `└ Grupo dos ADMs: ${prog.admin_grupo_id ? `<code>${prog.admin_grupo_id}</code>` : 'falta definir — use /setlog no grupo dos ADMs'}`;
   const rows = [];
   for (let i = 0; i < ALFABETOS.length; i += 2) {
@@ -298,10 +299,11 @@ function alfabetosPanel(gid) {
   ]);
   rows.push([
     { text: `🛡 Registro ADM: ${onOffCurto(prog.log_no_admin_grupo)}`, callback_data: `ab_log:${gid}` },
-    { text: '⬅️ Voltar', callback_data: `open:${gid}` },
+    { text: `🖼 Ler imagens: ${onOffCurto(prog.ler_imagens)}`, callback_data: `ab_ocr:${gid}` },
   ]);
   rows.push([
     { text: `🧪 Admin entra no teste: ${onOffCurto(prog.punir_staff)}`, callback_data: `ab_staff:${gid}` },
+    { text: '⬅️ Voltar', callback_data: `open:${gid}` },
   ]);
   return { text: `${head}\n\n${lines.join('\n')}${dicas}${progHead}`, reply_markup: { inline_keyboard: rows } };
 }
@@ -442,6 +444,16 @@ export function registerCallbacks(bot) {
         saveMod(gid, 'alfabetos', c);
         const p = alfabetosPanel(gid); await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id, { text: c.punir_staff ? 'Modo teste ligado: inclui administradores.' : 'Modo teste desligado: não se aplica a administradores.' }).catch(() => {});
+        return;
+      } else if (data.startsWith('ab_ocr:')) {
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        const c = getMod(gid, 'alfabetos');
+        const cur = getProgressivoCfg(c);
+        c.ler_imagens = !cur.ler_imagens;
+        saveMod(gid, 'alfabetos', c);
+        const p = alfabetosPanel(gid); await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id, { text: `Ler imagens ${c.ler_imagens ? 'ativado (Tesseract OCR)' : 'desativado'}` }).catch(() => {});
         return;
       } else if (data.startsWith('ab_tgl:')) {
         // submenu MULTISSELEÇÃO: marca/desmarca 1 flag; 'desativado' limpa tudo.

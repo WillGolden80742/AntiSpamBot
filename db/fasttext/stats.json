@@ -1,30 +1,35 @@
 {
-  "em": "2026-10-11T23:43:55.177Z",
+  "em": "2026-10-17T03:21:35.384Z",
+  "modo": "full",
+  "epoch": 100,
+  "dim": 100,
+  "threads": 12,
+  "amostra": null,
   "treino": {
-    "spam": 29378,
-    "ham": 30000,
-    "total": 59378
+    "spam": 1000000,
+    "ham": 1000000,
+    "total": 2000000
   },
   "teste": {
-    "spam": 29234,
-    "ham": 29400,
-    "total": 58634
+    "spam": 1000000,
+    "ham": 1000000,
+    "total": 2000000
   },
-  "fasttextTest": "N\t58634\nP@1\t0.979\nR@1\t0.979",
+  "fasttextTest": "N\t2000000\nP@1\t0.999\nR@1\t0.999",
   "fusao": {
-    "spamPego": 28958,
-    "spamTotal": 29234,
-    "pct": 99.1,
-    "escapou": 276,
-    "hamPunido": 32,
-    "hamLog": 469
+    "spamPego": 989593,
+    "spamTotal": 1000000,
+    "pct": 99,
+    "escapou": 10407,
+    "hamPunido": 44,
+    "hamLog": 73803
   },
   "bayes": {
-    "acerto": 57233,
-    "total": 58634,
-    "fpHam": 961
+    "acerto": 1997716,
+    "total": 2000000,
+    "fpHam": 1103
   },
-  "nSpam": 29378,
-  "nHam": 30000,
-  "fpHam": 32
+  "nSpam": 1000000,
+  "nHam": 1000000,
+  "fpHam": 44
 }

@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
     log_no_admin_grupo: true,
     admin_grupo_id: '',
     punir_staff: false,
+    ler_imagens: false,
   },
   semantico: {
     enabled: false,

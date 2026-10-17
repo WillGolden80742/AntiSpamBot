@@ -384,8 +384,10 @@ export async function julgarMensagem(bot, msg) {
     if (ehPermitido(texto, wl).permitido) { marcarJulgadas(gid, [msg.message_id]); return; }
 
     // Filtro de Mínimo de Caracteres:
+    // Não considera quebras de linha (\r\n / \n) na contagem de caracteres.
     // Se a mensagem for menor que minimo_chars, só é analisada se tiver @ (com exceção de @ ativa) ou link (com exceção de link ativa).
-    if (cfg.minimo_chars > 0 && texto.length < cfg.minimo_chars) {
+    const lenSemQuebras = texto.replace(/\r?\n/g, '').length;
+    if (cfg.minimo_chars > 0 && lenSemQuebras < cfg.minimo_chars) {
       const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(texto);
       const temLink = cfg.ignorar_min_link && (URL_RE.test(texto) || extrairLinks(texto).length > 0);
       URL_RE.lastIndex = 0;
@@ -422,7 +424,8 @@ export async function varreduraGrupo(bot, gid) {
       if (ehPermitido(m.texto, wl).permitido) continue;
       const staff = await ehStaff(bot, { chat: { id: gid }, from: { id: m.user_id } }).catch(() => false);
       if (staff && !cfg.punir_staff) { ignoradas++; continue; }
-      if (cfg.minimo_chars > 0 && String(m.texto || '').length < cfg.minimo_chars) {
+      const lenSemQuebras = String(m.texto || '').replace(/\r?\n/g, '').length;
+      if (cfg.minimo_chars > 0 && lenSemQuebras < cfg.minimo_chars) {
         const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(m.texto);
         const temLink = cfg.ignorar_min_link && (URL_RE.test(m.texto) || extrairLinks(m.texto).length > 0);
         URL_RE.lastIndex = 0;

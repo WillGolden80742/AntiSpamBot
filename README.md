@@ -3,12 +3,12 @@
 > Bot Node.js + SQLite para moderação automática de grupos no Telegram — **2 motores, 0 IA externa, 0 rede, 0 chave paga**.
 > Fiscaliza **alfabetos** (árabe, cirílico, chinês, hindi, bengali, não-ocidental, latim) + **antispam semântico trilíngue 🇧🇷🇪🇸🇺🇸** (regex com pesos + fastText local + Bayes de reserva) com painel inline no privado, whitelist, regras e trava de dono.
 
-- **Stack:** Node.js ESM (`"type": "module"`) + `node-telegram-bot-api` (polling) + `better-sqlite3` (WAL) + `fasttext` (binário do sistema) + `dotenv`
+- **Stack:** Node.js ESM (`"type": "module"`) + `node-telegram-bot-api` (polling) + `better-sqlite3` (WAL) + `fasttext` (binário do sistema) + `tesseract-ocr` (leitura de imagens) + `dotenv`
 - **Banco:** `db/grouphelp.db` (SQLite)
-- **Modelos locais:** `db/fasttext/spam.ftz` (98 MB quantizado, usado pelo bot) + `db/bayes.json` (fallback puro-JS)
+- **Modelos locais:** `db/fasttext/spam.ftz` (142 MB quantizado, usado pelo bot) + `db/bayes.json` (fallback puro-JS)
 - **Idiomas:** 🇧🇷 Português · 🇪🇸 Espanhol · 🇺🇸 Inglês — corpus, regex e salvaguardas nos 3 idiomas
-- **Corpus (~118k msgs):** treino `db/corpus/spam.json` (29.378) + `db/corpus/nao_spam.json` (30.000) = 59.378 · teste separado `db/corpus/spam_teste.json` (29.234) + `db/corpus/nao_spam_teste.json` (29.400) = 58.634 — ou seja, **~10k por idioma por classe**
-- **Precisão atual (teste separado de 58.634):** fastText `P@1 0.979 / R@1 0.979` · **fusão bot (regras+modelo): 28.958/29.234 spam pego (99,1%), 32 FP punidos no ham (0,11%)** (mais 469 🟡 só log) | Bayes `57.233/58.634` (961 FP)
+- **Corpus (4.000.000 msgs):** treino `db/corpus/spam.json` (1.000.000) + `db/corpus/nao_spam.json` (1.000.000) = 2.000.000 · teste separado `db/corpus/spam_teste.json` (1.000.000) + `db/corpus/nao_spam_teste.json` (1.000.000) = 2.000.000 — balanceado e trilíngue
+- **Precisão atual (teste separado de 2.000.000):** fastText `P@1 0.999 / R@1 0.999` · **fusão bot (regras+modelo): 989.593/1.000.000 spam pego (99,0%), apenas 44 FP punidos no ham (0,0044%)** (e 73.803 🟡 só log) | Bayes `1.997.716/2.000.000` (1.103 FP)
 
 ---
 
@@ -39,10 +39,10 @@
 
 | Capacidade | Como |
 |---|---|
-| **Bloqueia alfabetos indesejados** | Detecta árabe, cirílico, chinês (inclui japonês/coreano), hindi, bengali, *não-ocidental* (catch-all: grego, hebraico, tailandês…) e latim. Cada um com multisseleção: `Deletar / Silenciar / Banir / Progressivo`. |
-| **Antispam trilíngue sem IA externa** | 3 camadas: 1) whitelist perdoa, 2) 71 regex com pesos em PT/ES/EN (desligável por grupo — links continuam valendo) + análise de links por metadados, 3) fastText local treinado em corpus trilíngue (ou Bayes). Níveis `🟡 baixo (só log) · 🟠 médio · 🔴 severo`. |
+| **Bloqueia alfabetos indesejados** | Detecta árabe, cirílico, chinês (inclui japonês/coreano), hindi, bengali, *não-ocidental* (catch-all: grego, hebraico, tailandês…) e latim. Cada um com multisseleção: `Deletar / Silenciar / Banir / Progressivo`. Suporte opcional a **OCR via Tesseract** em fotos, documentos e stickers. |
+| **Antispam trilíngue sem IA externa** | 3 camadas: 1) whitelist perdoa, 2) 71 regex com pesos em PT/ES/EN (desligável por grupo — links continuam valendo) + análise de links por metadados, 3) fastText local treinado em corpus trilíngue de 4M (ou Bayes). Níveis `🟡 baixo (só log) · 🟠 médio · 🔴 severo`. |
 | **Punição em escada, nunca direta** | Alfa progressivo e semântico contam warns (`alfabeto:*`, `sem:*`) até `max_warns` (2–5) e só então aplicam `ban / mute / apenas deletar`. |
-| **Painel 100% no Telegram** | `/settings` no grupo → botão abre o privado → hub → `Alfabetos` ou `Antispam` → submenus (tolerância, whitelist, regras). Retreino só via CLI no servidor. |
+| **Painel 100% no Telegram** | `/settings` no grupo → botão abre o privado → hub → `Alfabetos` ou `Antispam` → submenus (tolerância, whitelist, regras, mínimo de caracteres, OCR). Retreino só via CLI no servidor. |
 | **Varredura sob demanda** | Bot grava tudo que vê em `messages_log`; a função `varreduraGrupo` revarre os últimos 61 min (handler `ai_run`, sem botão no painel atual — legado de mensagens antigas). Tempo real julga cada mensagem na hora. |
 | **Trava de dono** | Só o `OWNER_ID` adiciona o bot em grupos. Grupo estranho = aviso + `leaveChat` + limpeza local. |
 | **Isolamento total de falhas** | `unhandledRejection/uncaughtException` só logam; cada listener tem `try/catch` + `notificarFalha` no privado. Bot nunca cai. |
@@ -55,7 +55,7 @@ O bot entende **Português, Espanhol e Inglês** em todas as camadas — sem tra
 
 | Camada | Onde | Como funciona nos 3 idiomas |
 |---|---|---|
-| **Corpus** | `db/corpus/*.json` | Cada arquivo tem campo `idioma` (`Português`/`Espanhol`/`Inglês`), ~10k por idioma por classe, 118.012 exemplos no total |
+| **Corpus** | `db/corpus/*.json` | Cada arquivo tem campo `idioma` (`Português`/`Espanhol`/`Inglês`), 4.000.000 de exemplos no total (2M treino + 2M teste balanceados) |
 | **Regex de spam** | `app/helpers/sinais.js` | Padrões PT (`renda extra`, `saque do FGTS`, `vazou`) + ES (`gana dinero`, `tarjeta`) + EN (`earn $… a day`, `work from home`, `passive income`, `financial freedom`, `withdrawal of`) |
 | **Salvaguardas anti-FP** | `app/controllers/semantico.js` → `ehAvisoOuConversaLegitima()` | Avisos legítimos reconhecidos nos 3 idiomas: `dá pra consultar o CPF` / `puedes comprobar el CPF` / `can you check the CPF` · `renovar CNH` / `renew CNH` · `tarjeta de registro de votante` / `voter registration card` · `ganhou/empatou de novo` / `de nuevo` · `fake giveaway` / `falso anúncio` |
 | **Modelo fastText** | `db/fasttext/spam.ftz` | Treinado no corpus trilíngue misturado — detecta spam nos 3 idiomas com um único modelo |
@@ -72,8 +72,8 @@ AntiSpamBot/
 ├── app/
 │   ├── controllers/
 │   │   ├── acesso.js        # trava de dono (gate de entrada + rede 5min)
-│   │   ├── alfabetos.js     # fiscal de alfabetos + progressivo + logs ADM
-│   │   ├── callbacks.js     # hub de botões inline (open/mod_alfa/ai/wl/...)
+│   │   ├── alfabetos.js     # fiscal de alfabetos + progressivo + OCR Tesseract + logs ADM
+│   │   ├── callbacks.js     # hub de botões inline (open/mod_alfa/ai/wl/ab_ocr/...)
 │   │   ├── commands.js      # /start /settings /setlog /regras /analise /sinais...
 │   │   └── semantico.js     # juiz semântico + varredura + tolerância (+ retreinar() órfã)
 │   ├── helpers/
@@ -92,26 +92,25 @@ AntiSpamBot/
 │       └── group.js         # findOrCreate/backfill/list/visibleGroups/logEvent
 ├── bin/
 │   ├── bot.js               # entry real: polling + register* + getMe log
-│   └── treinar.js           # treino fastText (treino/teste separados) + fusão real + Bayes + stats.json
+│   └── treinar.js           # treino leve em streams (nice -n 19, flags --full/--amostra) + fusão + Bayes
 ├── config/
 │   └── database.js          # better-sqlite3 + WAL + auto-exec schema.sql
 ├── db/
 │   ├── corpus/
-│   │   ├── spam.json            # 29.378 exemplos spam (TREINO, ~10k por idioma)
-│   │   ├── nao_spam.json        # 30.000 exemplos ham (TREINO, 10k por idioma)
-│   │   ├── spam_teste.json      # 29.234 exemplos spam (TESTE separado)
-│   │   └── nao_spam_teste.json  # 29.400 exemplos ham (TESTE separado)
+│   │   ├── spam.json            # 1.000.000 exemplos spam (TREINO trilíngue)
+│   │   ├── nao_spam.json        # 1.000.000 exemplos ham (TREINO trilíngue)
+│   │   ├── spam_teste.json      # 1.000.000 exemplos spam (TESTE separado)
+│   │   └── nao_spam_teste.json  # 1.000.000 exemplos ham (TESTE separado)
 │   ├── fasttext/
-│   │   ├── spam.ftz         # modelo quantizado EM USO (98 MB, dim 100 / epoch 100 / lr 0.7)
-│   │   ├── spam.vec         # vetores (26 MB, inspeção)
-│   │   └── stats.json       # {treino:{spam,ham,total}, teste:{...}, fasttextTest, fusao:{...}, bayes:{...}}
+│   │   ├── spam.ftz         # modelo quantizado EM USO (142 MB, dim 100 / epoch 100 / lr 0.7)
+│   │   ├── spam.vec         # vetores (463 MB, inspeção)
+│   │   └── stats.json       # {treino:{2M}, teste:{2M}, fasttextTest, fusao:{...}, bayes:{...}}
 │   ├── migrate/
 │   │   └── 001_ai_mods.sql  # migração legada antispam_ai/censurar
 │   ├── bayes.json           # modelo Bayes puro-JS (246 KB)
 │   ├── grouphelp.db         # SQLite principal (+ -shm/-wal)
 │   ├── schema.sql           # DDL: groups/settings/warns/messages_log/events
 │   └── seeds.js             # seed demo (-1001001 Anarquia e Libertarianismo)
-├── Dado novos/              # área de trabalho do corpus (expand_datasets.py, monitor.py, expand.log, cache tradução, backup/ — JSONs são cópias de db/corpus/, ignorados no git)
 ├── backups/                   # convenção do servidor (snapshots codigo.tar.gz + grouphelp.db) — não existe neste checkout
 ├── log/
 │   └── bot.log              # log de runtime
@@ -125,7 +124,7 @@ AntiSpamBot/
 └── yarn.lock
 ```
 
-> `node_modules/`, `graphify-out/`, `*.db-shm/-wal`, `Dado novos/*.json` e snapshots de `backups/` não são versionados — ver `.gitignore`.
+> `node_modules/`, `graphify-out/`, `*.db-shm/-wal` e snapshots de `backups/` não são versionados — ver `.gitignore`.
 
 ---
 
@@ -144,10 +143,10 @@ AntiSpamBot/
 | Arquivo | Responsabilidade | Detalhe |
 |---|---|---|
 | `acesso.js` (113 linhas) | Trava de dono | `OWNER_ID` do env. `new_chat_members`: se quem adicionou ≠ dono → avisa e sai. Rede: mensagem de grupo sem `settings.acesso.autorizado` há +5 min → sai + `DELETE groups/settings/warns`. Grupos já no banco no boot = legado (do dono). |
-| `alfabetos.js` (678 linhas) | Fiscal de alfabetos | `ALFA_REGEX` por script + `detectarAlfabetoAtivo` (respeita desativados + exceções do não-ocidental + ignora emoji puro + ignora `/comandos` + ignora staff salvo `punir_staff`). `aplicarSelecaoImediata` (flags fixas na hora) vs `aplicarProgressivo` (warns até final). Logs espelhados em `logNoGrupoADM` ou DM dos admins. Ouve `message` + `edited_message`. |
-| `semantico.js` (432 linhas) | Juiz semântico trilíngue | `analisarTexto` (regex PT/ES/EN+modelo+tolerância, com chave `regex` que desliga os padrões de texto) → `julgarNucleo` (baixo=só `sem_log`; médio/severo=delete+warn em escada até ban/mute) → `julgarMensagem` (tempo real + buffer + whitelist + staff) → `varreduraGrupo` (61 min, silenciosa). `retreinar()` existe mas está órfã (sem chamadores — botão e comando removidos; retreino só via CLI). Painéis `painelSemantico/painelTolerancia/painelTolNumeros`. |
-| `callbacks.js` (667 linhas) | Todos os botões inline | Prefixos `open:/done:/mod:/mod_alfa:/ab:/ab_tgl:/ab_set: (legado)/ab_exceto:/ab_excts:/ab_prog:/ab_max:/ab_final:/ab_warnmsg:/ab_log:/ab_staff:` (alfabetos) + `ai:/ai_tgl:/ai_max:/ai_final:/ai_warnmsg:/ai_del:/ai_warn:/ai_staff:/sem_regex:/ai_run: (legado)` (antispam) + `sem_tol:/sem_tol_custom:/sem_tol_set:` + `cens_ver:/cens_editar:` (regras) + `wl:/wl_add_link:/wl_add_assunto:/wl_rm_*`. `sem_treinar:` foi removido (retreino só via CLI no servidor). `canEdit` exige admin do grupo. Multisseleção com exclusividades (progressivo × silenciar/banir; silenciar × banir). |
-| `commands.js` (307 linhas) | Comandos `/` | `/start` (privado=hub, grupo=requisito admin), `/reload` (sincroniza admins), `/settings|/config|/pvtconfig` (abre privado), `/setlog [ID|aqui|limpar]` (grupo ADM de logs), `/chatid`, `/regras`, `/definir_regras`, `/analise` (reply: veredito + % + ação no privado), `/aistatus`, `/sinais` (dry-run sem punir), `/perdaoai` (zera `sem:*`), `/perdao` (zera `alfabeto:*`). Sem `/retreinar` (removido — retreino só via CLI). |
+| `alfabetos.js` (775 linhas) | Fiscal de alfabetos + OCR | `ALFA_REGEX` por script + `detectarAlfabetoAtivo` (respeita desativados + exceções do não-ocidental + ignora emoji puro + ignora `/comandos` + ignora staff salvo `punir_staff`). Suporte a **OCR via Tesseract** em fotos, imagens e stickers estáticos (`ler_imagens`). `aplicarSelecaoImediata` vs `aplicarProgressivo`. Logs espelhados em `logNoGrupoADM` ou DM dos admins. Ouve `message` + `edited_message`. |
+| `semantico.js` (436 linhas) | Juiz semântico trilíngue | `analisarTexto` (regex PT/ES/EN+modelo+tolerância, com chave `regex` que desliga os padrões de texto) → `julgarNucleo` (baixo=só `sem_log`; médio/severo=delete+warn em escada até ban/mute) → `julgarMensagem` (tempo real + buffer + whitelist + staff + filtro de tamanho mínimo de caracteres desconsiderando quebras de linha). Painéis `painelSemantico/painelTolerancia/painelTolNumeros`. |
+| `callbacks.js` (680 linhas) | Todos os botões inline | Prefixos `open:/done:/mod:/mod_alfa:/ab:/ab_tgl:/ab_set: (legado)/ab_exceto:/ab_excts:/ab_prog:/ab_max:/ab_final:/ab_warnmsg:/ab_log:/ab_ocr:/ab_staff:` (alfabetos) + `ai:/ai_tgl:/ai_max:/ai_final:/ai_warnmsg:/ai_del:/ai_warn:/ai_staff:/sem_regex:/sem_min:/sem_min_set:/sem_min_arroba:/sem_min_link:` (antispam) + `sem_tol:/sem_tol_custom:/sem_tol_set:` + `cens_ver:/cens_editar:` (regras) + `wl:/wl_add_link:/wl_add_assunto:/wl_rm_*`. Multisseleção com exclusividades. |
+| `commands.js` (307 linhas) | Comandos `/` | `/start` (privado=hub, grupo=requisito admin), `/reload` (sincroniza admins), `/settings|/config|/pvtconfig` (abre privado), `/setlog [ID\|aqui\|limpar]` (grupo ADM de logs), `/chatid`, `/regras`, `/definir_regras`, `/analise` (reply: veredito + % + ação no privado), `/aistatus`, `/sinais` (dry-run sem punir), `/perdaoai` (zera `sem:*`), `/perdao` (zera `alfabeto:*`). Sem `/retreinar` (removido — retreino só via CLI). |
 
 ### Helpers (`app/helpers/`)
 
@@ -211,8 +210,9 @@ Regex em `ALFA_REGEX`: árabe `0600-06FF+0750-077F+08A0-08FF`, cirílico `0400-0
 
 - **Emoji puro nunca pune:** `temLetraOuNumeroNaoOcidental` exige letra/número de outro script (`\p{L}\p{N}`). `"ótimo 👍"` passa.
 - **Exceções:** `exceto_nao_ocidental: [cirilico,...]` — russo passa, hebraico continua bloqueado (`stripScripts` + `passaNaExcecao`).
+- **OCR Tesseract em Imagens:** toggle `🖼 Ler imagens` (`ab_ocr`, default **desativado**): quando ativado, se a mensagem contiver imagem (foto em alta resolução, documento com mime-type de imagem ou sticker estático) e não for detectada infração no texto visível, o bot baixa a imagem e executa o Tesseract localmente (`por+eng+rus+ara+chi_sim+chi_tra+hin+ben+jpn+kor+tha+heb+ell`). Se encontrar alfabeto restrito dentro da imagem, aplica a punição configurada e anexa o texto lido no log/aviso.
 - **Multisseleção por alfabeto:** `{deletar, silenciar, banir, progressivo}`. Legado string (`desativado/deletar/silenciar+deletar/ban+deletar/progressivo`) migra sozinho via `normSelecao`. Regras de exclusão: progressivo × (silenciar/banir); silenciar × banir; deletar combina com tudo; desmarcar tudo = desativado.
-- **Progressivo global:** `progressivo_enabled` (default ON), `max_warns` 2–5 (default 3), `acao_final` ban/mute/deletar, `avisar_no_grupo`, `log_no_admin_grupo` + `admin_grupo_id`, `punir_staff` (modo teste, default OFF = staff totalmente ignorado, sem delete/warn).
+- **Progressivo global:** `progressivo_enabled` (default ON), `max_warns` 2–5 (default 3), `acao_final` ban/mute/deletar, `avisar_no_grupo`, `log_no_admin_grupo` + `admin_grupo_id`, `punir_staff` (modo teste, default OFF = staff totalmente ignorado, sem delete/warn), `ler_imagens` (default OFF).
 - **Apenas deletar:** se só `deletar` marcado (ou `acao_final=deletar`), nunca conta warn, nunca restringe — só apaga + avisa curto + log ADM.
 
 ---
@@ -255,7 +255,7 @@ Punição (`julgarNucleo`): `baixo` = só `events(sem_log)`, silencioso. `médio
 
 ### Painéis inline (`callbacks.js`)
 
-`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] [✅ Concluir]` → Alfabetos: submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, testar com admins. Antispam (`painelSemantico`): liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Tolerância` (50/65/80 + grade 10–90), ✅/⬜ `Regex texto` (padrão ligado; desligado = só links + modelo), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar. Sem botão de varredura nem de retreino no painel atual (handlers `ai_run:` e `sem_treinar:` existiam para mensagens antigas; `sem_treinar:` foi removido do código e o comando `/retreinar` também — retreino só via CLI no servidor). Callbacks legados ainda atendidos: `ab_set:` (submenu antigo de escolha única) e `mod:` (hub antigo).
+`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] [✅ Concluir]` → Alfabetos: submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, `🖼 Ler imagens` (OCR Tesseract para fotos/imagens/stickers), testar com admins. Antispam (`painelSemantico`): liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Mínimo de Caracteres` (desativado/10..100 com exceções `@` e link), `Tolerância` (50/65/80 + grade 10–90), ✅/⬜ `Regex texto` (padrão ligado; desligado = só links + modelo), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar. Sem botão de varredura nem de retreino no painel atual (handlers `ai_run:` e `sem_treinar:` existiam para mensagens antigas; `sem_treinar:` foi removido do código e o comando `/retreinar` também — retreino só via CLI no servidor). Callbacks legados ainda atendidos: `ab_set:` (submenu antigo de escolha única) e `mod:` (hub antigo).
 
 ---
 
@@ -271,13 +271,13 @@ messages_log(group_id, message_id, user_id, texto, criado_em, julgado_em) PK(gro
 events(id AI PK, kind, group_id, user_id, meta JSON, created_at)
 ```
 
-Módulos em `settings.data`: `alfabetos` (7 seleções + progressivo/max/ação final/aviso/log ADM/grupo ADM/modo teste) · `semantico` (enabled/deletar/warn/avisar/max_warns/acao_final/log/staff/tolerância/modelo_min/regex) · `regras` (texto) · `whitelist` (links/assuntos) · `acesso` (autorizado/adicionado_por/em). Adoção automática de legados: `antispam_ai→semantico` (`getSemCfg`), `censurar→regras` (`getRegrasTexto`).
+Módulos em `settings.data`: `alfabetos` (7 seleções + progressivo/max/ação final/aviso/log ADM/grupo ADM/modo teste/ler_imagens) · `semantico` (enabled/deletar/warn/avisar/max_warns/acao_final/log/staff/tolerância/modelo_min/regex/minimo_chars/ignorar_min_arroba/ignorar_min_link) · `regras` (texto) · `whitelist` (links/assuntos) · `acesso` (autorizado/adicionado_por/em). Adoção automática de legados: `antispam_ai→semantico` (`getSemCfg`), `censurar→regras` (`getRegrasTexto`).
 
 ---
 
 ## 10. Instalação
 
-Pré-requisitos: **Node 20+** (`better-sqlite3` v11 exige Node moderno — testado em v22; no servidor de produção usa-se o binário dedicado do Node v24), **fasttext** (binário), **pnpm ou npm**.
+Pré-requisitos: **Node 20+** (`better-sqlite3` v11 exige Node moderno — testado em v22; no servidor de produção usa-se o binário dedicado do Node v24), **fasttext** (binário), **tesseract-ocr** (binário + idiomas para OCR de imagens), **pnpm ou npm**.
 
 ```bash
 # 1. clone / entre na pasta
@@ -287,10 +287,11 @@ cd AntiSpamBot
 # 2. instale deps (escolha 1)
 pnpm install        # ou: npm install --no-audit --no-fund
 
-# 3. instale o fasttext (Ubuntu/Debian)
-sudo apt update && sudo apt install -y fasttext
-# macOS: brew install fasttext
+# 3. instale o fasttext e o tesseract-ocr (Ubuntu/Debian)
+sudo apt update && sudo apt install -y fasttext tesseract-ocr tesseract-ocr-por tesseract-ocr-eng tesseract-ocr-rus tesseract-ocr-ara tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-hin tesseract-ocr-ben tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-tha tesseract-ocr-heb tesseract-ocr-ell
+# macOS: brew install fasttext tesseract tesseract-lang
 fasttext -h  # deve abrir a ajuda
+tesseract --version  # deve exibir a versão do Tesseract
 
 # 4. configure o .env (ver próxima seção)
 cp .env.example .env && nano .env
@@ -341,19 +342,22 @@ Para manter online na VPS: `pm2 start bot.js --name antispam`, `systemd`, ou `tm
 ## 13. Treinamento (`bin/treinar.js`)
 
 ```bash
-node bin/treinar.js   # ou: pnpm sem:treinar (só no servidor — sem via Telegram)
+node bin/treinar.js                # modo leve com streaming e prioridade baixa (nice -n 19)
+node bin/treinar.js --full         # modo full (epoch 100, dim 100, threads=12)
+node bin/treinar.js --amostra 5000 # teste rápido em lote menor
+# ou via npm: pnpm sem:treinar (só no servidor — sem via Telegram)
 ```
 
-Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (sem vazamento treino→teste):
+Pipeline (todo local, sem rede, otimizado para não sobrecarregar memória RAM):
+1. **Streaming em blocos de 64 KB**: Não faz `JSON.parse` em arquivos inteiros de quase 1 GB. Extrai campos em stream diretamente para `/tmp/ft_train.txt` e `/tmp/ft_test.txt`.
+2. Lê treino `db/corpus/spam.json` (1.000.000) + `nao_spam.json` (1.000.000) = **2.000.000** e teste `db/corpus/spam_teste.json` (1.000.000) + `nao_spam_teste.json` (1.000.000) = **2.000.000**. Total **4.000.000 de mensagens balanceadas**.
+3. `fasttext supervised` executado com `nice -n 19` (prioridade mínima de CPU).
+4. `quantize` gera o binário otimizado `spam.ftz` (142 MB).
+5. Avalia no **teste separado de 2.000.000**: `fasttext test` (P@1 / R@1) + probabilidades por classe.
+6. **Recall REAL do bot (fusão regras+modelo)** no teste: replica `nivelFusao` com `TOL 65`.
+7. Salva `db/fasttext/stats.json` com resumo completo.
 
-1. Lê treino `db/corpus/spam.json` (29.378) + `nao_spam.json` (30.000) = **59.378** e teste `db/corpus/spam_teste.json` (29.234) + `nao_spam_teste.json` (29.400) = **58.634**. Total **~118k mensagens trilíngues (~10k por idioma/classe)**. Normaliza (lower, 1 espaço, 500 chars). Sem `*_teste.json`, cai p/ holdout 20% do treino (fallback).
-2. `fasttext supervised -dim 100 -epoch 100 -wordNgrams 2 -minCount 1 -lr 0.7 -minn 3 -maxn 6` (só no treino) → `spam.bin` → `quantize` → `spam.ftz` (o bot usa o `.ftz`; o `.bin` é apagado se o `.ftz` existir).
-3. Avalia no **teste separado**: `fasttext test` (P@1/R@1) + `predict-prob` por classe.
-4. **Recall REAL do bot (fusão regras+modelo)** no teste — replica `analisarTexto`/`nivelFusao` com `TOL 65`: conta spam pego/punido/escapado + ham punido (FP) / só log 🟡 + lista até 8 exemplos escapados.
-5. Treina Bayes puro-JS no **treino**, avalia no **teste** → `db/bayes.json` + acurácia.
-6. Salva `db/fasttext/stats.json`: `{em, treino:{spam,ham,total}, teste:{...}, fasttextTest, fusao:{spamPego,spamTotal,pct,escapou,hamPunido,hamLog}, bayes:{acerto,total,fpHam}}` (mantém `nSpam/nHam/fpHam` legados).
-
-Último treino (`2026-10-11`): treino 59.378 (spam 29.378 / ham 30.000) · teste 58.634 (29.234/29.400) · fastText `P@1 0.979 R@1 0.979` · **fusão: spam 28.958/29.234 (99,1%), 276 escaparam, ham punido 32/29.400 (0,11%), só log 469** · Bayes `57.233/58.634` (FP 961). Para melhorar: adicione exemplos em `db/corpus/*.json` (`{id, idioma, conteudo, infracao|categoria}`) e `db/corpus/*_teste.json` e retreine. Área de expansão: `Dado novos/` (`expand_datasets.py` com `DDGTranslator` em lote + `monitor.py` + cache de tradução + `backup/`).
+Último treino (`2026-10-17`): treino 2.000.000 (spam 1.000.000 / ham 1.000.000) · teste 2.000.000 (1.000.000 / 1.000.000) · fastText `P@1 0.999 R@1 0.999` · **fusão bot: spam pego 989.593/1.000.000 (99,0%), escapou 10.407, ham punido (FP) 44/1.000.000 (0,0044%), só log 🟡 73.803** · Bayes `1.997.716/2.000.000` (FP 1.103).
 
 ---
 
@@ -364,6 +368,7 @@ Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (se
 - **Tolerância** (`sem_tol`, default **65%**, clamp 0–100) + **`Regex texto`** (`sem_regex`, default **ligado**): com o regex desligado, os 71 padrões somem e valem só metadados de link + modelo local (ideal p/ grupos que só querem pegar link de aposta/golpe sem filtrar texto). `Baixo 50%` = rigoroso (pune mais) · `Médio 65%` · `Alto 80%` = perdoa mais · `Personalizar` (grade 10–90; o handler aceita 0–100). Com o regex ligado, severo **sempre** pune independente da tolerância (salvo veto `pct<15`). **Modelo puro sem regex** só pune acima de `modelo_min` (faixa 50–100; 90 vindo do `getSemCfg`, 95 no fallback interno) — abaixo disso vira só 🟡 log. Ação final efetiva em grupos novos: semântico `mute` (seed), alfabetos `ban` (o fallback do código quando o campo falta é `ban` nos dois).
 - **Mínimo de Caracteres no Antispam** (`sem_min`, default **30** caracteres, opções: `Desativado (0)`, `10`, `20`, `30`, `40`, `50`, `60`, `100`):
   - Mensagens com quantidade de caracteres menor que o limite configurado são descartadas e não passam pela análise do antispam.
+  - **Desconsidera quebras de linha**: o comprimento para o filtro conta apenas caracteres reais, removendo `\r\n` e `\n` antes de checar a contagem (`lenSemQuebras`).
   - **Exceção `Ignorar regra quando tiver @`** (`sem_min_arroba`): quando ativa, qualquer mensagem contendo `@` (ex: menção ou arroba) é forçada a passar pela análise de spam, mesmo que seja menor que o mínimo de caracteres.
   - **Exceção `Ignorar regra quando tiver link`** (`sem_min_link`): quando ativa, qualquer mensagem contendo link é forçada a passar pela análise de spam, mesmo que seja menor que o mínimo de caracteres.
   - **Detecção de links inteligentes:** reconhece links com ou sem protocolo (`http/https/www/t.me` e domínios diretos como `virus.aposta.betnacional.ru` ou `1.d`), ignorando pontuações gramaticais de final de frase (ex: `"Boa noite."`).
@@ -418,6 +423,8 @@ Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (se
 ## 18. Roadmap / ideias
 
 - [x] Suporte trilíngue PT/ES/EN (corpus + regex + salvaguardas) — **pronto em 2026-10-11**.
+- [x] OCR Tesseract em imagens para fiscal de alfabetos (`ler_imagens`) — **pronto em 2026-10-17**.
+- [x] Expansão do corpus para 4.000.000 de mensagens e otimização de treino em stream (`nice -n 19`) — **pronto em 2026-10-17**.
 - [ ] Painel web localhost Material Design 3 (citado na descrição do `package.json`, ainda não presente — hoje tudo é via Telegram).
 - [ ] Testes automatizados p/ `normSelecao`, `analisarSinais`, `analisarTexto` e `detectarAlfabetoAtivo`.
 - [ ] Rate-limit / antiflood (mensagens repetidas em janela curta).
@@ -426,4 +433,4 @@ Pipeline (todo local, sem rede) — **treino e teste em arquivos separados** (se
 
 ---
 
-*Gerado com `buildify` (graphify-first): `graphify update .` → leitura de `bin/`, `app/`, `config/`, `db/` → contagens reais do corpus trilíngue (118.012 exemplos) e do último treino (`stats.json`: fusão 99,1% / FP 0,11%). Após mudar código, rode `graphify update .` de novo.*
+*Gerado com `buildify` (graphify-first): `graphify update .` → leitura de `bin/`, `app/`, `config/`, `db/` → contagens reais do corpus trilíngue (4.000.000 exemplos) e do último treino (`stats.json`: fusão 99,0% / FP 0,0044%). Após mudar código, rode `graphify update .` de novo.*

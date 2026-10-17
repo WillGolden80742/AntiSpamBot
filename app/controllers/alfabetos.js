@@ -19,6 +19,9 @@
 // aplicada NA HORA (sem warns). Quem tem flags fixas continua igual.
 // PRODUÇÃO (punir_staff=false): staff (admin/creator) é TOTALMENTE ignorado —
 // sem delete, sem warn, sem aviso. MODO TESTE (punir_staff=true): pune admin igual membro.
+import { spawn } from 'node:child_process';
+import https from 'node:https';
+import http from 'node:http';
 import { getModule, logEvent } from '../models/group.js';
 import { ensureBotPerm, targetIsStaff, isAnonymousAdmin } from '../helpers/admin.js';
 import { db } from '../../config/database.js';
@@ -167,6 +170,7 @@ export function getProgressivoCfg(raw = {}) {
     // MODO TESTE (punir staff): default false = produção (admin ignorado: sem delete, sem warn).
     // Ligue em /settings → Alfabetos → Punir staff: ON para testar punição em admins.
     punir_staff: raw.punir_staff ?? false,
+    ler_imagens: raw.ler_imagens ?? false,
   };
 }
 
@@ -615,6 +619,75 @@ async function aplicarPunicao(bot, msg, alfabeto, punicao, cfgRaw) {
   return aplicarSelecaoImediata(bot, msg, alfabeto, sel, cfgRaw);
 }
 
+// Executa o Tesseract no buffer da imagem para extrair texto
+export function extrairTextoImagem(buffer, langs = 'por+eng+rus+ara+chi_sim+chi_tra+hin+ben+jpn+kor+tha+heb+ell') {
+  return new Promise((resolve) => {
+    if (!buffer || !buffer.length) return resolve('');
+    const child = spawn('tesseract', ['stdin', 'stdout', '-l', langs, '--psm', '11'], {
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+
+    let stdout = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch {}
+      resolve('');
+    }, 15000);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const res = (stdout || '').trim();
+      console.log(`[alfabetos:ocr] Tesseract finalizado (code ${code}), texto extraído: "${res.slice(0, 100)}"`);
+      resolve(res);
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      console.error('[alfabetos:ocr] Erro no processo tesseract:', err.message);
+      resolve('');
+    });
+
+    try {
+      child.stdin.end(buffer);
+    } catch {
+      clearTimeout(timer);
+      resolve('');
+    }
+  });
+}
+
+// Baixa o arquivo do Telegram em memória via link gerado pelo bot
+async function baixarBufferImagem(bot, fileId) {
+  try {
+    const fileLink = await bot.getFileLink(fileId);
+    console.log(`[alfabetos:ocr] Baixando imagem de: ${fileLink.replace(/\/bot[^/]+/, '/bot***')}`);
+    return await new Promise((resolve, reject) => {
+      const client = fileLink.startsWith('https:') ? https : http;
+      client.get(fileLink, (res) => {
+        if (res.statusCode !== 200) {
+          console.error(`[alfabetos:ocr] Download retornou status HTTP ${res.statusCode}`);
+          res.resume();
+          return resolve(null);
+        }
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          console.log(`[alfabetos:ocr] Imagem baixada com sucesso (${buf.length} bytes)`);
+          resolve(buf);
+        });
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+  } catch (err) {
+    console.error('[alfabetos:ocr] falha ao baixar imagem:', err.message);
+    return null;
+  }
+}
+
 // Corpo do fiscal — a MESMA regra do tempo real para enviadas e editadas.
 // Retorna 'punido' | 'sem_regra' | 'ignorado' | 'erro'.
 export async function verificarMensagemAlfabeto(bot, msg) {
@@ -622,14 +695,13 @@ export async function verificarMensagemAlfabeto(bot, msg) {
   const mid = msg?.message_id;
   let resultado = 'ignorado';
   try {
-    // só grupo/supergrupo, só mensagem com texto
+    // só grupo/supergrupo
     if (!msg.chat || !['group', 'supergroup'].includes(msg.chat.type)) { resultado = 'ignorado'; }
     else if (msg.from?.is_bot) { resultado = 'ignorado'; }
     else {
-      // ignora comandos (evita punir /settings etc. pelo latim)
-      const txt = msg.text || msg.caption || '';
-      if (!txt) { resultado = 'ignorado'; }
-      else if (txt.startsWith('/')) { resultado = 'ignorado'; }
+      let txt = String(msg.text || msg.caption || '').trim();
+      // ignora comandos no texto direto (evita punir /settings etc. pelo latim)
+      if (txt.startsWith('/')) { resultado = 'ignorado'; }
       else {
         const cfg = getModule(gid, 'alfabetos');
         if (!cfg) { resultado = 'sem_regra'; }
@@ -648,11 +720,56 @@ export async function verificarMensagemAlfabeto(bot, msg) {
           } catch {}
           if (staffIgnorado) { resultado = 'ignorado'; }
           else {
-            const hit = detectarAlfabetoAtivo(txt, cfg);
-            if (!hit) { resultado = 'sem_regra'; }
-            else {
-              await aplicarPunicao(bot, msg, hit.alfabeto, hit.punicao, cfg);
-              resultado = 'punido';
+            const progCfg = getProgressivoCfg(cfg);
+
+            // Verifica se a mensagem tem imagem (foto, documento de imagem ou sticker estático) e ler_imagens está ativo
+            let temImagem = false;
+            let fileId = null;
+            if (progCfg.ler_imagens) {
+              if (Array.isArray(msg.photo) && msg.photo.length > 0) {
+                // Pega a foto de maior resolução disponível
+                const foto = msg.photo[msg.photo.length - 1];
+                fileId = foto.file_id;
+                temImagem = true;
+              } else if (msg.document && msg.document.mime_type && msg.document.mime_type.startsWith('image/')) {
+                fileId = msg.document.file_id;
+                temImagem = true;
+              } else if (msg.sticker && !msg.sticker.is_animated && !msg.sticker.is_video && msg.sticker.file_id) {
+                fileId = msg.sticker.file_id;
+                temImagem = true;
+              }
+            }
+
+            if (!txt && !temImagem) {
+              resultado = 'ignorado';
+            } else {
+              // 1. Testa primeiro o texto direto se houver
+              let hit = txt ? detectarAlfabetoAtivo(txt, cfg) : null;
+
+              // 2. Se não detectou no texto (ou não havia texto) e tem imagem com ler_imagens ativo, executa OCR Tesseract
+              if (!hit && temImagem && fileId) {
+                const imgBuf = await baixarBufferImagem(bot, fileId);
+                if (imgBuf) {
+                  const textoOcr = await extrairTextoImagem(imgBuf);
+                  if (textoOcr) {
+                    hit = detectarAlfabetoAtivo(textoOcr, cfg);
+                    if (hit) {
+                      // Se punir via imagem, registra o texto extraído no objeto da mensagem para log/warn
+                      msg._ocr_texto = textoOcr;
+                      if (!msg.text && !msg.caption) {
+                        msg.text = `[Imagem OCR]: ${textoOcr}`;
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (!hit) {
+                resultado = 'sem_regra';
+              } else {
+                await aplicarPunicao(bot, msg, hit.alfabeto, hit.punicao, cfg);
+                resultado = 'punido';
+              }
             }
           }
         }
