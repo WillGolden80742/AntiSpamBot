@@ -260,6 +260,7 @@ export function painelSemantico(gid) {
     [{ text: `${(cfg.regex ?? true) ? '✅' : '⬜'} Regex texto`, callback_data: `sem_regex:${gid}` },
      { text: `📏 Mín. Caracteres: ${cfg.minimo_chars > 0 ? cfg.minimo_chars : 'Off'}`, callback_data: `sem_min:${gid}` }],
     [{ text: `✅ Whitelist: ${wl.links.length} links, ${wl.assuntos.length} assuntos`, callback_data: `wl:${gid}` }],
+    [{ text: `👥 Warns & Bans (Antispam)`, callback_data: `usr_sem_open:${gid}` }],
     [{ text: '⬅️ Voltar', callback_data: `open:${gid}` }],
   ];
   return { text: head, reply_markup: { inline_keyboard: rows } };
@@ -508,9 +509,10 @@ export function registerSemantico(bot) {
           ? `✅ Assunto permitido salvo: "${item.slice(0, 80)}".` : '❌ Não consegui salvar agora. Tente de novo em instantes.');
       } else if (p.tipo === 'buscar_usuario') {
         clearPendente(msg.chat.id, msg.from.id);
-        setFiltroLista(msg.chat.id, p.gid, { busca: texto });
-        const f = getFiltroLista(msg.chat.id, p.gid);
-        const painel = await painelListaUsuarios(p.gid, 0, f.busca, f.ordem, bot);
+        const motor = p.motor === 'sem' ? 'sem' : 'alfabeto';
+        setFiltroLista(msg.chat.id, `${p.gid}:${motor}`, { busca: texto });
+        const f = getFiltroLista(msg.chat.id, `${p.gid}:${motor}`);
+        const painel = await painelListaUsuarios(p.gid, 0, f.busca, f.ordem, motor, bot);
         await bot.sendMessage(msg.chat.id, painel.text, { reply_markup: painel.reply_markup, parse_mode: 'HTML' });
       }
     } catch (e) { console.error('[semantico:edits]', e.message); }

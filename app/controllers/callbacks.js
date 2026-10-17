@@ -304,6 +304,9 @@ function alfabetosPanel(gid) {
   ]);
   rows.push([
     { text: `🧪 Admin entra no teste: ${onOffCurto(prog.punir_staff)}`, callback_data: `ab_staff:${gid}` },
+  ]);
+  rows.push([
+    { text: `👥 Warns & Bans (Alfabetos)`, callback_data: `usr_alfabeto_open:${gid}` },
     { text: '⬅️ Voltar', callback_data: `open:${gid}` },
   ]);
   return { text: `${head}\n\n${lines.join('\n')}${dicas}${progHead}`, reply_markup: { inline_keyboard: rows } };
@@ -728,57 +731,61 @@ export function registerCallbacks(bot) {
         removerWlItem(gid, 'assunto', idx);
         const p = painelWhitelist(gid); await edit(p.text, p.reply_markup);
         return;
-      } else if (data.startsWith('usr_open:')) {
-        // Entrada pela hub: SEMPRE lista completa (limpa busca presa), preserva ordem.
+      } else if (data.startsWith('usr_alfabeto_open:') || data.startsWith('usr_sem_open:')) {
+        // Entrada pela sessão do motor: SEMPRE lista completa (limpa busca presa), preserva ordem.
+        const motor = data.startsWith('usr_sem_open:') ? 'sem' : 'alfabeto';
         const gid = data.split(':')[1];
         if (!(await canEdit(bot, q, gid))) return;
-        setFiltroLista(q.message.chat.id, gid, { busca: '' });
-        const f = getFiltroLista(q.message.chat.id, gid);
-        const p = await painelListaUsuarios(gid, 0, '', f.ordem, bot);
+        setFiltroLista(q.message.chat.id, `${gid}:${motor}`, { busca: '' });
+        const f = getFiltroLista(q.message.chat.id, `${gid}:${motor}`);
+        const p = await painelListaUsuarios(gid, 0, '', f.ordem, motor, bot);
         await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id).catch(() => {});
         return;
-      } else if (data.startsWith('usr_list:')) {
+      } else if (data.startsWith('usr_alfabeto_list:') || data.startsWith('usr_sem_list:')) {
+        const motor = data.startsWith('usr_sem_list:') ? 'sem' : 'alfabeto';
         const [, gid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
-        const f = getFiltroLista(q.message.chat.id, gid);
-        const p = await painelListaUsuarios(gid, pag, f.busca, f.ordem, bot);
+        const f = getFiltroLista(q.message.chat.id, `${gid}:${motor}`);
+        const p = await painelListaUsuarios(gid, pag, f.busca, f.ordem, motor, bot);
         await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id).catch(() => {});
         return;
-      } else if (data.startsWith('usr_ord:')) {
+      } else if (data.startsWith('usr_alfabeto_ord:') || data.startsWith('usr_sem_ord:')) {
         // Toggle recentes ↔ antigos (preserva busca, volta p/ página 0).
+        const motor = data.startsWith('usr_sem_ord:') ? 'sem' : 'alfabeto';
         const [, gid, novaOrd] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const ord = novaOrd === 'antigos' ? 'antigos' : 'recentes';
-        setFiltroLista(q.message.chat.id, gid, { ordem: ord });
-        const f = getFiltroLista(q.message.chat.id, gid);
-        const p = await painelListaUsuarios(gid, 0, f.busca, f.ordem, bot);
+        setFiltroLista(q.message.chat.id, `${gid}:${motor}`, { ordem: ord });
+        const f = getFiltroLista(q.message.chat.id, `${gid}:${motor}`);
+        const p = await painelListaUsuarios(gid, 0, f.busca, f.ordem, motor, bot);
         await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id, { text: ord === 'antigos' ? 'Ordem: mais antigos primeiro' : 'Ordem: mais recentes primeiro' }).catch(() => {});
         return;
-      } else if (data.startsWith('usr_clear:')) {
+      } else if (data.startsWith('usr_alfabeto_clear:') || data.startsWith('usr_sem_clear:')) {
         // Limpa a busca e volta p/ lista completa (preserva ordem).
+        const motor = data.startsWith('usr_sem_clear:') ? 'sem' : 'alfabeto';
         const gid = data.split(':')[1];
         if (!(await canEdit(bot, q, gid))) return;
-        setFiltroLista(q.message.chat.id, gid, { busca: '' });
-        const f = getFiltroLista(q.message.chat.id, gid);
-        const p = await painelListaUsuarios(gid, 0, '', f.ordem, bot);
+        setFiltroLista(q.message.chat.id, `${gid}:${motor}`, { busca: '' });
+        const f = getFiltroLista(q.message.chat.id, `${gid}:${motor}`);
+        const p = await painelListaUsuarios(gid, 0, '', f.ordem, motor, bot);
         await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id).catch(() => {});
         return;
-      } else if (data.startsWith('usr_search:')) {
+      } else if (data.startsWith('usr_alfabeto_search:') || data.startsWith('usr_sem_search:')) {
+        const motor = data.startsWith('usr_sem_search:') ? 'sem' : 'alfabeto';
         const gid = data.split(':')[1];
         if (!(await canEdit(bot, q, gid))) return;
-        // Anti-duplo clique: o listener de edição também trata — este só arma o pendente.
-        // Se já houver busca pendente aberta, não reenvia a pergunta (evita msg duplicada).
+        // Anti-duplo clique: se já houver busca pendente aberta, não reenvia a pergunta.
         const existente = getPendente(q.message.chat.id, q.from.id);
-        if (existente?.tipo === 'buscar_usuario' && existente?.gid === String(gid)) {
+        if (existente?.tipo === 'buscar_usuario' && existente?.gid === String(gid) && existente?.motor === motor) {
           await bot.answerCallbackQuery(q.id).catch(() => {});
           return;
         }
-        setPendente(q.message.chat.id, q.from.id, { gid, tipo: 'buscar_usuario' });
+        setPendente(q.message.chat.id, q.from.id, { gid, motor, tipo: 'buscar_usuario' });
         await bot.sendMessage(
           q.message.chat.id,
           '🔍 Envie o <b>@username</b>, <b>nome</b> ou <b>ID numérico</b> do usuário que deseja pesquisar.\nDigite "cancelar" para desistir.',
@@ -786,24 +793,27 @@ export function registerCallbacks(bot) {
         );
         await bot.answerCallbackQuery(q.id).catch(() => {});
         return;
-      } else if (data.startsWith('usr_view:')) {
+      } else if (data.startsWith('usr_alfabeto_view:') || data.startsWith('usr_sem_view:')) {
+        const motor = data.startsWith('usr_sem_view:') ? 'sem' : 'alfabeto';
         const [, gid, uid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
-        const p = await painelDetalhesUsuario(bot, gid, uid, pag);
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag, motor);
         await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id).catch(() => {});
         return;
-      } else if (data.startsWith('usr_del_warns:')) {
+      } else if (data.startsWith('usr_alfabeto_del_warns:') || data.startsWith('usr_sem_del_warns:')) {
+        const motor = data.startsWith('usr_sem_del_warns:') ? 'sem' : 'alfabeto';
         const [, gid, uid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
-        const qtd = zerarWarnsUsuario(gid, uid);
-        await bot.answerCallbackQuery(q.id, { text: `✅ ${qtd} advertência(s) zerada(s) com sucesso!`, show_alert: true }).catch(() => {});
-        const p = await painelDetalhesUsuario(bot, gid, uid, pag);
+        const qtd = zerarWarnsUsuario(gid, uid, motor);
+        await bot.answerCallbackQuery(q.id, { text: `✅ ${qtd} advertência(s) de ${motor === 'sem' ? 'Antispam' : 'Alfabetos'} zerada(s)!`, show_alert: true }).catch(() => {});
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag, motor);
         await edit(p.text, p.reply_markup);
         return;
-      } else if (data.startsWith('usr_unban:')) {
+      } else if (data.startsWith('usr_alfabeto_unban:') || data.startsWith('usr_sem_unban:')) {
+        const motor = data.startsWith('usr_sem_unban:') ? 'sem' : 'alfabeto';
         const [, gid, uid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
@@ -813,8 +823,14 @@ export function registerCallbacks(bot) {
         } else {
           await bot.answerCallbackQuery(q.id, { text: `❌ Falha ao desbanir: ${res.error}`, show_alert: true }).catch(() => {});
         }
-        const p = await painelDetalhesUsuario(bot, gid, uid, pag);
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag, motor);
         await edit(p.text, p.reply_markup);
+        return;
+      } else if (data.startsWith('usr_open:') || data.startsWith('usr_list:') || data.startsWith('usr_ord:')
+        || data.startsWith('usr_clear:') || data.startsWith('usr_search:') || data.startsWith('usr_view:')
+        || data.startsWith('usr_del_warns:') || data.startsWith('usr_unban:')) {
+        // LEGADO (botão do hub removido): redireciona p/ lista de Alfabetos.
+        await bot.answerCallbackQuery(q.id, { text: 'Use o botão dentro de Alfabetos ou Antispam.' }).catch(() => {});
         return;
       }
       await bot.answerCallbackQuery(q.id).catch(() => {});

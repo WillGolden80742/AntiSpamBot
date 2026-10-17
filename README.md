@@ -255,10 +255,10 @@ Punição (`julgarNucleo`): `baixo` = só `events(sem_log)`, silencioso. `médio
 
 ### Painéis inline (`callbacks.js`)
 
-`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] | [👥 Usuários (Warns & Bans)] | [✅ Concluir]`
-- **Alfabetos:** submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, `🖼 Ler imagens` (OCR Tesseract para fotos/imagens/stickers), testar com admins.
-- **Antispam (`painelSemantico`):** liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Mínimo de Caracteres` (desativado/10..100 com exceções `@` e link), `Tolerância` (50/65/80 + grade 10–90), ✅/⬜ `Regex texto` (padrão ligado; desligado = só links + modelo), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar.
-- **Usuários (`painelListaUsuarios`):** lista NOME primeiro (`Nome (@user)`, nunca só ID — completa via `getChatMember` e salva no cache `users`) com ordenação `📜 Ver antigos` / `🕒 Ver recentes` (última atividade) e `🌐 não ocidentais por último` (nomes fora do repertório latino vão para o fim, marcados com `🌐`), paginação (`⬅️ Anterior` / `Próxima ➡️` preservando busca + ordem), badges (`⚠️ X` / `🚫 Y`), busca (`🔍 Pesquisar` por `@username`, nome ou ID, com anti-duplo-clique e `❌ Limpar busca`). Detalhe exibe status live, histórico e botões **Zerar Warns** / **Desbanir / Desmutar**.
+`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] | [✅ Concluir]` — cada motor tem seu botão `👥 Warns & Bans` dentro da própria sessão.
+- **Alfabetos:** submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, `🖼 Ler imagens` (OCR Tesseract para fotos/imagens/stickers), testar com admins + `👥 Warns & Bans (Alfabetos)` (só warns `alfabeto:*` e bans `alfabeto_ban/mute`).
+- **Antispam (`painelSemantico`):** liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Mínimo de Caracteres` (desativado/10..100 com exceções `@` e link), `Tolerância` (50/65/80 + grade 10–90), ✅/⬜ `Regex texto` (padrão ligado; desligado = só links + modelo), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`) + `👥 Warns & Bans (Antispam)` (só warns `sem:*` e bans `sem_ban/mute`), voltar.
+- **Usuários por motor (`painelListaUsuarios`, `usuarios.js:MOTORES`):** cada lista mostra SÓ quem tem pendência naquele motor (NOME primeiro, completa via `getChatMember` e salva no cache `users`), ordenação `📜 Ver antigos` / `🕒 Ver recentes` e `🌐 não ocidentais por último`, paginação preservando busca + ordem, badges (`⚠️ X` / `🚫 Y`), busca com anti-duplo-clique e `❌ Limpar busca`. Detalhe mostra status live + histórico SÓ do motor e os botões **Zerar Warns (motor)** / **Desbanir / Desmutar** afetam só aquele motor. Volta para a sessão de origem (`mod_alfa` ou `ai`).
 
 ---
 

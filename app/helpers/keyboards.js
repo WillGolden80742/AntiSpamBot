@@ -1,9 +1,8 @@
-// Hub: 3 seções (Alfabetos, Antispam e Usuários). Regras e Whitelist moram no Antispam.
+// Hub: 2 motores (Alfabetos, Antispam). Warns&Bans mora DENTRO de cada motor.
 export function settingsKeyboard(gid) {
   return {
     inline_keyboard: [
       [{ text: '🔤 Alfabetos', callback_data: `mod_alfa:${gid}` }, { text: '🛡 Antispam', callback_data: `ai:${gid}` }],
-      [{ text: '👥 Usuários (Warns & Bans)', callback_data: `usr_open:${gid}` }],
       [{ text: '✅ Concluir', callback_data: `done:${gid}` }],
     ],
   };

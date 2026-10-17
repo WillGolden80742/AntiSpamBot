@@ -1,4 +1,22 @@
-// Gerenciamento de Usuários: lista paginada, busca, remoção de warns e desbanimento (unban).
+// Gerenciamento de Usuários por MOTOR: 'alfabeto' | 'sem' (antispam).
+// Cada lista só enxerga warns/bans DO SEU motor (prefixo reason + kind do evento).
+// Detalhe mostra só o histórico do motor + zera/desbane SÓ aquele motor.
+export const MOTORES = {
+  alfabeto: {
+    chave: 'alfabeto', emoji: '🔤', nome: 'Alfabetos',
+    warnLike: 'alfabeto:%',
+    banKinds: ["kind LIKE 'alfabeto_ban'", "kind LIKE 'alfabeto_mute'"],
+  },
+  sem: {
+    chave: 'sem', emoji: '🛡', nome: 'Antispam',
+    warnLike: 'sem:%',
+    banKinds: ["kind LIKE 'sem_ban'", "kind LIKE 'sem_mute'"],
+  },
+};
+export function normMotor(m) {
+  return m === 'sem' ? 'sem' : 'alfabeto';
+}
+function cfgMotor(motor) { return MOTORES[normMotor(motor)]; }
 import { db } from '../../config/database.js';
 import { getGroupTitle } from '../models/group.js';
 import { ensureBotPerm } from '../helpers/admin.js';
@@ -30,15 +48,18 @@ export function ehNomeNaoOcidental(nome) {
   return TEM_LETRA_NUM.test(resto);
 }
 
-// Retorna lista paginada e contagem de usuários com dados no grupo (warns, punições ou mensagens)
+// Retorna lista paginada e contagem de usuários COM PENDÊNCIA NO MOTOR
+// (warns ou bans/mutes do motor). Sem pendência = fora da lista.
 // ordem: 'recentes' (última atividade DESC) | 'antigos' (ASC). Não ocidentais sempre por último.
-export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recentes') {
+export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recentes', motor = 'alfabeto') {
   const gStr = String(gid);
   const termo = String(busca || '').trim().replace(/^@/, '');
   const ord = ordem === 'antigos' ? 'antigos' : 'recentes';
+  const cfg = cfgMotor(motor);
+  const banCond = `(${cfg.banKinds.join(' OR ')})`;
 
   let whereFiltro = '';
-  const paramsFiltro = [gStr, gStr, gStr];
+  const paramsFiltro = [gStr, cfg.warnLike, gStr];
 
   if (termo) {
     if (/^\d+$/.test(termo)) {
@@ -51,15 +72,13 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
     }
   }
 
-  // Contagem total
+  // Contagem total (só quem tem pendência NO MOTOR)
   const countSql = `
     SELECT COUNT(*) as total
     FROM (
-      SELECT DISTINCT user_id FROM warns WHERE group_id = ?
+      SELECT DISTINCT user_id FROM warns WHERE group_id = ? AND reason LIKE ?
       UNION
-      SELECT DISTINCT user_id FROM events WHERE group_id = ? AND (kind LIKE '%ban%' OR kind LIKE '%mute%')
-      UNION
-      SELECT DISTINCT user_id FROM messages_log WHERE group_id = ? AND user_id > 0
+      SELECT DISTINCT user_id FROM events WHERE group_id = ? AND ${banCond}
     ) u
     LEFT JOIN users usr ON usr.id = u.user_id
     ${whereFiltro}
@@ -69,10 +88,10 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
   // Busca TODOS os candidatos com o filtro e ordena em JS:
   // ocidentais primeiro (recentes ou antigos), não ocidentais sempre por último.
   const queryParams = [
-    gStr, gStr, gStr, // base u
-    gStr,             // w
-    gStr,             // b
-    gStr,             // m
+    gStr, cfg.warnLike, // base u (warns)
+    gStr,               // base u (events)
+    gStr, cfg.warnLike, // w
+    gStr,               // b
   ];
   if (termo) {
     if (/^\d+$/.test(termo)) {
@@ -93,28 +112,21 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
       COALESCE(w.last_warn, '') as last_warn,
       COALESCE(b.cnt_bans, 0) as total_bans,
       COALESCE(b.last_ban, '') as last_ban,
-      COALESCE(m.cnt_msgs, 0) as total_msgs,
-      MAX(COALESCE(w.last_warn, ''), COALESCE(b.last_ban, ''), COALESCE(m.last_msg, '')) as ultima_atividade
+      MAX(COALESCE(w.last_warn, ''), COALESCE(b.last_ban, '')) as ultima_atividade
     FROM (
-      SELECT DISTINCT user_id FROM warns WHERE group_id = ?
+      SELECT DISTINCT user_id FROM warns WHERE group_id = ? AND reason LIKE ?
       UNION
-      SELECT DISTINCT user_id FROM events WHERE group_id = ? AND (kind LIKE '%ban%' OR kind LIKE '%mute%')
-      UNION
-      SELECT DISTINCT user_id FROM messages_log WHERE group_id = ? AND user_id > 0
+      SELECT DISTINCT user_id FROM events WHERE group_id = ? AND ${banCond}
     ) u
     LEFT JOIN users usr ON usr.id = u.user_id
     LEFT JOIN (
       SELECT user_id, COUNT(*) as cnt_warns, MAX(created_at) as last_warn
-      FROM warns WHERE group_id = ? GROUP BY user_id
+      FROM warns WHERE group_id = ? AND reason LIKE ? GROUP BY user_id
     ) w ON w.user_id = u.user_id
     LEFT JOIN (
       SELECT user_id, COUNT(*) as cnt_bans, MAX(created_at) as last_ban
-      FROM events WHERE group_id = ? AND (kind LIKE '%ban%' OR kind LIKE '%mute%') GROUP BY user_id
+      FROM events WHERE group_id = ? AND ${banCond} GROUP BY user_id
     ) b ON b.user_id = u.user_id
-    LEFT JOIN (
-      SELECT user_id, COUNT(*) as cnt_msgs, MAX(criado_em) as last_msg
-      FROM messages_log WHERE group_id = ? AND user_id > 0 GROUP BY user_id
-    ) m ON m.user_id = u.user_id
     ${whereFiltro}
   `;
 
@@ -139,20 +151,21 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
   const totalPaginas = Math.ceil(ordenados.length / ITENS_POR_PAGINA) || 1;
   const pagAtual = Math.min(Math.max(0, Number(pagina) || 0), totalPaginas - 1);
   const usuarios = ordenados.slice(pagAtual * ITENS_POR_PAGINA, pagAtual * ITENS_POR_PAGINA + ITENS_POR_PAGINA);
-  return { usuarios, total: ordenados.length, pagina: pagAtual, termo, ordem: ord };
+  return { usuarios, total: ordenados.length, pagina: pagAtual, termo, ordem: ord, motor: cfg.chave };
 }
 
-// Detalhes completos de um usuário específico no grupo
-export function obterDetalhesUsuario(gid, uid) {
+// Detalhes completos de um usuário específico no grupo — SÓ o motor pedido
+export function obterDetalhesUsuario(gid, uid, motor = 'alfabeto') {
   const gStr = String(gid);
   const uNum = Number(uid);
+  const cfg = cfgMotor(motor);
+  const banCond = `(${cfg.banKinds.join(' OR ')})`;
 
   const perfil = db.prepare('SELECT * FROM users WHERE id = ?').get(uNum) || null;
-  const warns = db.prepare('SELECT * FROM warns WHERE group_id = ? AND user_id = ? ORDER BY id DESC').all(gStr, uNum);
-  const punicoes = db.prepare("SELECT * FROM events WHERE group_id = ? AND user_id = ? AND (kind LIKE '%ban%' OR kind LIKE '%mute%') ORDER BY id DESC LIMIT 10").all(gStr, uNum);
-  const ultimasMsgs = db.prepare('SELECT texto, criado_em FROM messages_log WHERE group_id = ? AND user_id = ? ORDER BY criado_em DESC LIMIT 3').all(gStr, uNum);
+  const warns = db.prepare('SELECT * FROM warns WHERE group_id = ? AND user_id = ? AND reason LIKE ? ORDER BY id DESC').all(gStr, uNum, cfg.warnLike);
+  const punicoes = db.prepare(`SELECT * FROM events WHERE group_id = ? AND user_id = ? AND ${banCond} ORDER BY id DESC LIMIT 10`).all(gStr, uNum);
 
-  return { perfil, warns, punicoes, ultimasMsgs };
+  return { perfil, warns, punicoes };
 }
 
 // Formata nome legível do usuário — NOME primeiro (username vira detalhe).
@@ -201,34 +214,44 @@ export async function enriquecerPerfis(bot, gid, usuarios) {
   usuarios.sort((a, b) => (Number(!!a._naoOci) - Number(!!b._naoOci)));
 }
 
-// Painel principal da lista de usuários.
-// bot opcional (5º arg): se passado, completa os nomes da página via API e salva no cache.
-export async function painelListaUsuarios(gid, pagina = 0, busca = '', ordem = 'recentes', bot = null) {
+// Painel principal da lista de usuários DE UM MOTOR.
+// bot opcional (6º arg): se passado, completa os nomes da página via API e salva no cache.
+// voltarPara: callback de retorno (alfabetos → mod_alfa, antispam → ai).
+export async function painelListaUsuarios(gid, pagina = 0, busca = '', ordem = 'recentes', motor = 'alfabeto', bot = null) {
+  // Compat com chamada antiga de 5 args (gid, pag, busca, ordem, bot):
+  if (bot === null && motor !== null && typeof motor === 'object' && typeof motor.getChatMember === 'function') {
+    bot = motor; motor = 'alfabeto';
+  }
+  const cfg = cfgMotor(motor);
   const gStr = String(gid);
   const titulo = getGroupTitle(gStr);
-  const { usuarios, total, termo, ordem: ordReal } = listarUsuariosGrupo(gStr, pagina, busca, ordem);
+  const { usuarios, total, termo, ordem: ordReal } = listarUsuariosGrupo(gStr, pagina, busca, ordem, cfg.chave);
   if (bot) await enriquecerPerfis(bot, gStr, usuarios);
   const totalPaginas = Math.ceil(total / ITENS_POR_PAGINA) || 1;
   const pagAtual = Math.min(Math.max(0, Number(pagina) || 0), totalPaginas - 1);
   const temNaoOci = usuarios.some((u) => u._naoOci);
+  const voltarCb = cfg.chave === 'sem' ? `ai:${gStr}` : `mod_alfa:${gStr}`;
 
   let head = `👥 <b>${titulo}</b>\n\n`;
-  head += `👤 <b>Gerenciamento de Usuários</b>\n`;
+  head += `${cfg.emoji} <b>Warns & Bans — ${cfg.nome}</b>\n`;
   head += `Ordem: <b>${ordReal === 'antigos' ? 'mais antigos' : 'mais recentes'}</b> · 🌐 não ocidentais por último\n`;
   if (termo) {
     head += `🔍 Filtro atual: <code>${termo}</code> (${total} encontrado(s))\n`;
+  } else if (total) {
+    head += `Com pendência neste motor (${total} total)\n`;
   } else {
-    head += `Mostrando usuários ativos, advertidos ou punidos (${total} total)\n`;
+    head += `Ninguém com pendência neste motor 🎉\n`;
   }
   head += `Página <b>${pagAtual + 1}</b> de <b>${totalPaginas}</b>\n\n`;
 
   if (!usuarios.length) {
-    head += `<i>Nenhum usuário encontrado para esta seleção.</i>`;
+    head += `<i>Nenhum usuário com warn/ban de ${cfg.nome}.</i>`;
   } else {
-    head += `Selecione um usuário para gerenciar warns e bans:`;
+    head += `Selecione um usuário para gerenciar:`;
     if (temNaoOci && usuarios.some((u) => u._naoOci)) head += `\n<i>🌐 = nome não ocidental (última prioridade)</i>`;
   }
 
+  const prefixoCb = `usr_${cfg.chave}`;
   const rows = [];
   for (const u of usuarios) {
     const nome = u._nome || formatarNomeUsuario(u, u.user_id);
@@ -241,39 +264,41 @@ export async function painelListaUsuarios(gid, pagina = 0, busca = '', ordem = '
     if (rotulo.length > 60) rotulo = `${rotulo.slice(0, 57)}…`;
     rows.push([{
       text: rotulo,
-      callback_data: `usr_view:${gStr}:${u.user_id}:${pagAtual}`,
+      callback_data: `${prefixoCb}_view:${gStr}:${u.user_id}:${pagAtual}`,
     }]);
   }
 
   // Linha de navegação (preserva busca + ordem ao paginar)
   const navRow = [];
   if (pagAtual > 0) {
-    navRow.push({ text: '⬅️ Anterior', callback_data: `usr_list:${gStr}:${pagAtual - 1}` });
+    navRow.push({ text: '⬅️ Anterior', callback_data: `${prefixoCb}_list:${gStr}:${pagAtual - 1}` });
   }
   if (pagAtual < totalPaginas - 1) {
-    navRow.push({ text: 'Próxima ➡️', callback_data: `usr_list:${gStr}:${pagAtual + 1}` });
+    navRow.push({ text: 'Próxima ➡️', callback_data: `${prefixoCb}_list:${gStr}:${pagAtual + 1}` });
   }
   if (navRow.length) rows.push(navRow);
 
-  // Toggle de ordem + pesquisa + retorno
+  // Toggle de ordem + pesquisa + retorno ao motor
   rows.push([
-    { text: ordReal === 'antigos' ? '🕒 Ver recentes' : '📜 Ver antigos', callback_data: `usr_ord:${gStr}:${ordReal === 'antigos' ? 'recentes' : 'antigos'}` },
+    { text: ordReal === 'antigos' ? '🕒 Ver recentes' : '📜 Ver antigos', callback_data: `${prefixoCb}_ord:${gStr}:${ordReal === 'antigos' ? 'recentes' : 'antigos'}` },
   ]);
   const actionRow = [
-    { text: termo ? '❌ Limpar busca' : '🔍 Pesquisar', callback_data: termo ? `usr_clear:${gStr}` : `usr_search:${gStr}` },
-    { text: '⬅️ Voltar ao Menu', callback_data: `open:${gStr}` },
+    { text: termo ? '❌ Limpar busca' : '🔍 Pesquisar', callback_data: termo ? `${prefixoCb}_clear:${gStr}` : `${prefixoCb}_search:${gStr}` },
+    { text: '⬅️ Voltar', callback_data: voltarCb },
   ];
   rows.push(actionRow);
 
   return { text: head, reply_markup: { inline_keyboard: rows } };
 }
 
-// Painel detalhado de um usuário selecionado
-export async function painelDetalhesUsuario(bot, gid, uid, paginaOrigem = 0) {
+// Painel detalhado de um usuário selecionado — SÓ o motor pedido.
+// Zerar/desbanir afetam SÓ esse motor.
+export async function painelDetalhesUsuario(bot, gid, uid, paginaOrigem = 0, motor = 'alfabeto') {
+  const cfg = cfgMotor(motor);
   const gStr = String(gid);
   const uNum = Number(uid);
   const titulo = getGroupTitle(gStr);
-  const { perfil, warns, punicoes } = obterDetalhesUsuario(gStr, uNum);
+  const { perfil, warns, punicoes } = obterDetalhesUsuario(gStr, uNum, cfg.chave);
 
   // Checa status do usuário diretamente na API do chat
   let statusTelegram = 'desconhecido';
@@ -294,19 +319,21 @@ export async function painelDetalhesUsuario(bot, gid, uid, paginaOrigem = 0) {
   }[statusTelegram] || statusTelegram;
 
   const nome = formatarNomeUsuario(perfil, uNum);
+  const prefixoCb = `usr_${cfg.chave}`;
 
   let txt = `👥 <b>${titulo}</b>\n\n`;
+  txt += `${cfg.emoji} <b>${cfg.nome}</b>\n`;
   txt += `👤 <b>Usuário:</b> ${nome}\n`;
   txt += `🆔 <b>ID:</b> <code>${uNum}</code>\n`;
   txt += `📌 <b>Status no grupo:</b> ${statusLabel}\n\n`;
 
-  txt += `⚠️ <b>Total de Warns:</b> ${warns.length}\n`;
+  txt += `⚠️ <b>Warns (${cfg.nome}):</b> ${warns.length}\n`;
   if (warns.length > 0) {
     const recentes = warns.slice(0, 3).map((w, idx) => `  ${idx + 1}. <code>${w.reason || 'sem motivo'}</code> (${w.created_at.slice(0, 16)})`).join('\n');
     txt += `${recentes}\n`;
   }
 
-  txt += `\n🚫 <b>Histórico de Bans/Mutes:</b> ${punicoes.length}\n`;
+  txt += `\n🚫 <b>Bans/Mutes (${cfg.nome}):</b> ${punicoes.length}\n`;
   if (punicoes.length > 0) {
     const recentesP = punicoes.slice(0, 2).map((p, idx) => `  ${idx + 1}. ${p.kind} em ${p.created_at.slice(0, 16)}`).join('\n');
     txt += `${recentesP}\n`;
@@ -315,27 +342,28 @@ export async function painelDetalhesUsuario(bot, gid, uid, paginaOrigem = 0) {
   const rows = [];
   const actionRow = [];
 
-  // Botão remover warns se houver
+  // Botão remover warns do MOTOR se houver
   if (warns.length > 0) {
-    actionRow.push({ text: '⚠️ Zerar Warns', callback_data: `usr_del_warns:${gStr}:${uNum}:${paginaOrigem}` });
+    actionRow.push({ text: `⚠️ Zerar Warns (${cfg.nome})`, callback_data: `${prefixoCb}_del_warns:${gStr}:${uNum}:${paginaOrigem}` });
   }
 
   // Botão desbanir / remover restrição
-  actionRow.push({ text: '🔓 Desbanir / Desmutar', callback_data: `usr_unban:${gStr}:${uNum}:${paginaOrigem}` });
+  actionRow.push({ text: '🔓 Desbanir / Desmutar', callback_data: `${prefixoCb}_unban:${gStr}:${uNum}:${paginaOrigem}` });
   rows.push(actionRow);
 
   rows.push([
-    { text: '⬅️ Voltar para Lista', callback_data: `usr_list:${gStr}:${paginaOrigem}` },
+    { text: '⬅️ Voltar para Lista', callback_data: `${prefixoCb}_list:${gStr}:${paginaOrigem}` },
   ]);
 
   return { text: txt, reply_markup: { inline_keyboard: rows } };
 }
 
-// Remove todos os warns de um usuário no grupo
-export function zerarWarnsUsuario(gid, uid) {
+// Remove os warns DE UM MOTOR do usuário no grupo
+export function zerarWarnsUsuario(gid, uid, motor = 'alfabeto') {
   const gStr = String(gid);
   const uNum = Number(uid);
-  const res = db.prepare('DELETE FROM warns WHERE group_id = ? AND user_id = ?').run(gStr, uNum);
+  const cfg = cfgMotor(motor);
+  const res = db.prepare('DELETE FROM warns WHERE group_id = ? AND user_id = ? AND reason LIKE ?').run(gStr, uNum, cfg.warnLike);
   return res.changes || 0;
 }
 
