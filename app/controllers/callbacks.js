@@ -10,7 +10,7 @@ import { getWhitelist, painelWhitelist, removerWlItem } from '../helpers/whiteli
 import { getRegrasTexto } from '../helpers/regras.js';
 import { getProgressivoCfg, ALFA_NOME, EXCETO_KEYS, normExcecoes, normSelecao, selecaoAtiva } from './alfabetos.js';
 import { getSemCfg, saveSemCfg, painelSemantico, painelTolerancia, painelTolNumeros, painelMinChars, varreduraGrupo } from './semantico.js';
-import { painelListaUsuarios, painelDetalhesUsuario, zerarWarnsUsuario, desbanirUsuario, getFiltroLista, setFiltroLista } from './usuarios.js';
+import { painelListaUsuarios, painelDetalhesUsuario, zerarWarnsUsuario, desbanirUsuario, mutarUsuario, banirUsuario, getFiltroLista, setFiltroLista } from './usuarios.js';
 import { db } from '../../config/database.js';
 
 const META = {
@@ -822,6 +822,36 @@ export function registerCallbacks(bot) {
           await bot.answerCallbackQuery(q.id, { text: '🔓 Usuário desbanido e permissões restauradas com sucesso!', show_alert: true }).catch(() => {});
         } else {
           await bot.answerCallbackQuery(q.id, { text: `❌ Falha ao desbanir: ${res.error}`, show_alert: true }).catch(() => {});
+        }
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag, motor);
+        await edit(p.text, p.reply_markup);
+        return;
+      } else if (data.startsWith('usr_alfabeto_mute:') || data.startsWith('usr_sem_mute:')) {
+        // Mute manual (ação direta do admin, fora da escada de warns).
+        const motor = data.startsWith('usr_sem_mute:') ? 'sem' : 'alfabeto';
+        const [, gid, uid, pagStr] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const pag = parseInt(pagStr, 10) || 0;
+        const res = await mutarUsuario(bot, gid, uid);
+        if (res.ok) {
+          await bot.answerCallbackQuery(q.id, { text: '🔇 Usuário mutado com sucesso!', show_alert: true }).catch(() => {});
+        } else {
+          await bot.answerCallbackQuery(q.id, { text: `❌ Falha ao mutar: ${res.error}`, show_alert: true }).catch(() => {});
+        }
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag, motor);
+        await edit(p.text, p.reply_markup);
+        return;
+      } else if (data.startsWith('usr_alfabeto_ban:') || data.startsWith('usr_sem_ban:')) {
+        // Ban manual (ação direta do admin, fora da escada de warns).
+        const motor = data.startsWith('usr_sem_ban:') ? 'sem' : 'alfabeto';
+        const [, gid, uid, pagStr] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const pag = parseInt(pagStr, 10) || 0;
+        const res = await banirUsuario(bot, gid, uid);
+        if (res.ok) {
+          await bot.answerCallbackQuery(q.id, { text: '🚫 Usuário banido com sucesso!', show_alert: true }).catch(() => {});
+        } else {
+          await bot.answerCallbackQuery(q.id, { text: `❌ Falha ao banir: ${res.error}`, show_alert: true }).catch(() => {});
         }
         const p = await painelDetalhesUsuario(bot, gid, uid, pag, motor);
         await edit(p.text, p.reply_markup);

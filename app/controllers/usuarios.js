@@ -354,6 +354,12 @@ export async function painelDetalhesUsuario(bot, gid, uid, paginaOrigem = 0, mot
   actionRow.push({ text: '🔓 Desbanir / Desmutar', callback_data: `${prefixoCb}_unban:${gStr}:${uNum}:${paginaOrigem}` });
   rows.push(actionRow);
 
+  // Linha de punição manual (fora da escada de warns — ação direta do admin)
+  rows.push([
+    { text: '🔇 Mutar', callback_data: `${prefixoCb}_mute:${gStr}:${uNum}:${paginaOrigem}` },
+    { text: '🚫 Banir', callback_data: `${prefixoCb}_ban:${gStr}:${uNum}:${paginaOrigem}` },
+  ]);
+
   rows.push([
     { text: '⬅️ Voltar para Lista', callback_data: `${prefixoCb}_list:${gStr}:${paginaOrigem}` },
   ]);
@@ -368,6 +374,44 @@ export function zerarWarnsUsuario(gid, uid, motor = 'alfabeto') {
   const cfg = cfgMotor(motor);
   const res = db.prepare('DELETE FROM warns WHERE group_id = ? AND user_id = ? AND reason LIKE ?').run(gStr, uNum, cfg.warnLike);
   return res.changes || 0;
+}
+
+// Muta o usuário na API do Telegram (ação manual do admin, fora da escada).
+export async function mutarUsuario(bot, gid, uid) {
+  const gStr = String(gid);
+  const uNum = Number(uid);
+
+  const permCheck = await ensureBotPerm(bot, gStr, 'can_restrict_members');
+  if (!permCheck.ok) {
+    return { ok: false, error: 'Bot sem permissão de restringir membros no grupo.' };
+  }
+
+  try {
+    await bot.restrictChatMember(gStr, uNum, {
+      permissions: { can_send_messages: false },
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// Bane o usuário na API do Telegram (ação manual do admin, fora da escada).
+export async function banirUsuario(bot, gid, uid) {
+  const gStr = String(gid);
+  const uNum = Number(uid);
+
+  const permCheck = await ensureBotPerm(bot, gStr, 'can_restrict_members');
+  if (!permCheck.ok) {
+    return { ok: false, error: 'Bot sem permissão de restringir membros no grupo.' };
+  }
+
+  try {
+    await bot.banChatMember(gStr, uNum);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 // Desbane o usuário na API do Telegram e remove restrições
