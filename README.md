@@ -1,4 +1,4 @@
-# AntiSpamBot — Clone Group Help Telegram
+# AntiSpamBot
 
 > Bot Node.js + SQLite para moderação automática de grupos no Telegram — **2 motores, 0 IA externa, 0 rede, 0 chave paga**.
 > Fiscaliza **alfabetos** (árabe, cirílico, chinês, hindi, bengali, não-ocidental, latim) + **antispam semântico trilíngue 🇧🇷🇪🇸🇺🇸** (regex com pesos + fastText local + Bayes de reserva) com painel inline no privado, whitelist, regras e trava de dono.
