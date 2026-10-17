@@ -357,6 +357,7 @@ async function aplicarSelecaoImediata(bot, msg, alfabeto, selRaw, cfgRaw) {
       if (sel.banir) {
         await bot.banChatMember(gid, uid);
         fezRestricao = `bani ${arroba}`;
+        try { limparWarnsAlfabeto(gid, uid); } catch {} // banir zera os warns
       } else {
         await bot.restrictChatMember(gid, uid, { permissions: { can_send_messages: false } });
         fezRestricao = `silenciei ${arroba}`;

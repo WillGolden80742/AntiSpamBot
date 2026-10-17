@@ -76,7 +76,7 @@ export function ehNomeNaoOcidental(nome) {
 // Retorna lista paginada e contagem de usuários COM PENDÊNCIA NO MOTOR
 // (warns ou bans/mutes do motor). Sem pendência = fora da lista.
 // ordem: 'recentes' (última atividade DESC) | 'antigos' (ASC). Não ocidentais sempre por último.
-export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recentes', motor = 'alfabeto') {
+export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recentes', motor = 'alfabeto', excluirIds = []) {
   const gStr = String(gid);
   const termo = String(busca || '').trim().replace(/^@/, '');
   const ord = ordem === 'antigos' ? 'antigos' : 'recentes';
@@ -138,11 +138,14 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
   `;
 
   const todos = db.prepare(sql).all(...queryParams);
+  // Admins (staff) nem entram na lista — Telegram proíbe puni-los.
+  const exSet = new Set((excluirIds || []).map(Number));
+  const todosSemStaff = exSet.size ? todos.filter((u) => !exSet.has(Number(u.user_id))) : todos;
   // Nome exibido + flag não ocidental (calculados aqui p/ ordenar sem nova query).
   // A separação 🌐 por último vale SÓ p/ o Antispam — na lista de Alfabetos
   // ela não se aplica (os infratores de alfabeto SÃO os não ocidentais).
   const separaNaoOci = cfg.chave !== 'alfabeto';
-  for (const u of todos) {
+  for (const u of todosSemStaff) {
     u._nome = formatarNomeUsuario(u, u.user_id);
     u._naoOci = separaNaoOci ? ehNomeNaoOcidental(u._nome) : false;
   }
@@ -154,8 +157,8 @@ export function listarUsuariosGrupo(gid, pagina = 0, busca = '', ordem = 'recent
     if (!db2) return -1;
     return ord === 'antigos' ? (da < db2 ? -1 : da > db2 ? 1 : 0) : (da > db2 ? -1 : da < db2 ? 1 : 0);
   };
-  const ocidentais = todos.filter((u) => !u._naoOci).sort(cmpData);
-  const naoOci = todos.filter((u) => u._naoOci).sort(cmpData);
+  const ocidentais = todosSemStaff.filter((u) => !u._naoOci).sort(cmpData);
+  const naoOci = todosSemStaff.filter((u) => u._naoOci).sort(cmpData);
   const ordenados = [...ocidentais, ...naoOci];
 
   const totalPaginas = Math.ceil(ordenados.length / ITENS_POR_PAGINA) || 1;
@@ -235,7 +238,16 @@ export async function painelListaUsuarios(gid, pagina = 0, busca = '', ordem = '
   const cfg = cfgMotor(motor);
   const gStr = String(gid);
   const titulo = getGroupTitle(gStr);
-  const { usuarios, total, termo, ordem: ordReal } = listarUsuariosGrupo(gStr, pagina, busca, ordem, cfg.chave);
+  // IDs do staff p/ tirar da lista (admin nem aparece — Telegram proíbe puni-lo).
+  // Se a API falhar, segue sem excluir (lista nunca quebra por isso).
+  let excluirStaff = [];
+  if (bot) {
+    try {
+      const admins = await bot.getChatAdministrators(gStr);
+      excluirStaff = (admins || []).map((a) => a?.user?.id).filter(Boolean);
+    } catch {}
+  }
+  const { usuarios, total, termo, ordem: ordReal } = listarUsuariosGrupo(gStr, pagina, busca, ordem, cfg.chave, excluirStaff);
   if (bot) await enriquecerPerfis(bot, gStr, usuarios);
   const totalPaginas = Math.ceil(total / ITENS_POR_PAGINA) || 1;
   const pagAtual = Math.min(Math.max(0, Number(pagina) || 0), totalPaginas - 1);
@@ -335,7 +347,12 @@ export async function painelDetalhesUsuario(bot, gid, uid, paginaOrigem = 0, mot
   txt += `${cfg.emoji} <b>${cfg.nome}</b>\n`;
   txt += `👤 <b>Usuário:</b> ${nome}\n`;
   txt += `🆔 <b>ID:</b> <code>${uNum}</code>\n`;
-  txt += `📌 <b>Status no grupo:</b> ${statusLabel}\n\n`;
+  txt += `📌 <b>Status no grupo:</b> ${statusLabel}\n`;
+  // Aviso proativo: fora do grupo não há como desmutar — o admin vê antes de apertar.
+  if (!['creator', 'administrator', 'member', 'restricted', 'kicked'].includes(statusTelegram)) {
+    txt += `⚠️ <b>Fora do grupo:</b> desmutar indisponível — precisa entrar de novo.\n`;
+  }
+  txt += `\n`;
 
   txt += `⚠️ <b>Warns (${cfg.nome}):</b> ${warns.length}\n`;
   if (warns.length > 0) {
@@ -350,22 +367,31 @@ export async function painelDetalhesUsuario(bot, gid, uid, paginaOrigem = 0, mot
   }
 
   const rows = [];
-  const actionRow = [];
 
-  // Botão remover warns do MOTOR se houver
-  if (warns.length > 0) {
+  // Switch sob demanda: um botão Banir↔Desbanir + um botão Mutar↔Desmutar.
+  // Banido (kicked) → Desbanir, senão Banir. Mutado (restricted) → Desmutar, senão Mutar.
+  // Zerar Warns só aparece se houver warn.
+  const banido = statusTelegram === 'kicked';
+  const mutado = statusTelegram === 'restricted';
+  // Admin (dono/adm): sem Banir/Desbanir/Mutar/Desmutar — Telegram proíbe punir staff.
+  const ehAdmin = ['creator', 'administrator'].includes(statusTelegram);
+
+  const btnBan = banido
+    ? { text: '🔓 Desbanir', callback_data: `${prefixoCb}_unban:${gStr}:${uNum}:${paginaOrigem}` }
+    : { text: '🚫 Banir', callback_data: `${prefixoCb}_ban:${gStr}:${uNum}:${paginaOrigem}` };
+  const btnMute = mutado
+    ? { text: '🔓 Desmutar', callback_data: `${prefixoCb}_unban:${gStr}:${uNum}:${paginaOrigem}` }
+    : { text: '🔇 Mutar', callback_data: `${prefixoCb}_mute:${gStr}:${uNum}:${paginaOrigem}` };
+
+  const actionRow = [];
+  // Banido não mostra Zerar Warns (o banir já zera sozinho) — só Desbanir.
+  if (warns.length > 0 && !banido) {
     actionRow.push({ text: `⚠️ Zerar Warns (${cfg.nome})`, callback_data: `${prefixoCb}_del_warns:${gStr}:${uNum}:${paginaOrigem}` });
   }
-
-  // Botão desbanir / remover restrição
-  actionRow.push({ text: '🔓 Desbanir / Desmutar', callback_data: `${prefixoCb}_unban:${gStr}:${uNum}:${paginaOrigem}` });
-  rows.push(actionRow);
-
-  // Linha de punição manual (fora da escada de warns — ação direta do admin)
-  rows.push([
-    { text: '🔇 Mutar', callback_data: `${prefixoCb}_mute:${gStr}:${uNum}:${paginaOrigem}` },
-    { text: '🚫 Banir', callback_data: `${prefixoCb}_ban:${gStr}:${uNum}:${paginaOrigem}` },
-  ]);
+  if (!ehAdmin) actionRow.push(btnBan);
+  if (actionRow.length) rows.push(actionRow);
+  // Mutar/Desmutar só p/ quem ainda está no grupo e não é admin.
+  if (!ehAdmin && ['member', 'restricted'].includes(statusTelegram)) rows.push([btnMute]);
 
   rows.push([
     { text: '⬅️ Voltar para Lista', callback_data: `${prefixoCb}_list:${gStr}:${paginaOrigem}` },
@@ -384,9 +410,10 @@ export function zerarWarnsUsuario(gid, uid, motor = 'alfabeto') {
 }
 
 // Muta o usuário na API do Telegram (ação manual do admin, fora da escada).
-export async function mutarUsuario(bot, gid, uid) {
+export async function mutarUsuario(bot, gid, uid, motor = 'alfabeto') {
   const gStr = String(gid);
   const uNum = Number(uid);
+  const cfg = cfgMotor(motor);
 
   const permCheck = await ensureBotPerm(bot, gStr, 'can_restrict_members');
   if (!permCheck.ok) {
@@ -397,6 +424,10 @@ export async function mutarUsuario(bot, gid, uid) {
     await bot.restrictChatMember(gStr, uNum, {
       permissions: { can_send_messages: false },
     });
+    try {
+      const { logEvent } = await import('../models/group.js');
+      logEvent(`${cfg.chave === 'sem' ? 'sem_mute' : 'alfabeto_mute'}`, gStr, uNum, { manual: true, motor: cfg.chave });
+    } catch {}
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -404,9 +435,10 @@ export async function mutarUsuario(bot, gid, uid) {
 }
 
 // Bane o usuário na API do Telegram (ação manual do admin, fora da escada).
-export async function banirUsuario(bot, gid, uid) {
+export async function banirUsuario(bot, gid, uid, motor = 'alfabeto') {
   const gStr = String(gid);
   const uNum = Number(uid);
+  const cfg = cfgMotor(motor);
 
   const permCheck = await ensureBotPerm(bot, gStr, 'can_restrict_members');
   if (!permCheck.ok) {
@@ -415,34 +447,88 @@ export async function banirUsuario(bot, gid, uid) {
 
   try {
     await bot.banChatMember(gStr, uNum);
+    try {
+      const { logEvent } = await import('../models/group.js');
+      logEvent(`${cfg.chave === 'sem' ? 'sem_ban' : 'alfabeto_ban'}`, gStr, uNum, { manual: true, motor: cfg.chave });
+    } catch {}
+    // Banir zera os warns do motor (banido não mostra Zerar Warns no painel)
+    try {
+      db.prepare('DELETE FROM warns WHERE group_id = ? AND user_id = ? AND reason LIKE ?').run(gStr, uNum, cfg.warnLike);
+    } catch {}
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
   }
 }
 
-// Desbane o usuário na API do Telegram e remove restrições
-export async function desbanirUsuario(bot, gid, uid) {
+// Desbane o usuário e remove restrições — detectando se está no grupo.
+// Desmutar só funciona p/ quem está dentro; fora do grupo o Telegram barra o
+// unrestrict, então nem tenta (e preserva o histórico em vez de fingir sucesso).
+export async function desbanirUsuario(bot, gid, uid, motor = 'alfabeto') {
   const gStr = String(gid);
   const uNum = Number(uid);
+  const cfg = cfgMotor(motor);
+  const banCond = `(${cfg.banKinds.join(' OR ')})`;
+  // Limpa o histórico DO MOTOR p/ o usuário sair da lista (sem pendência = fora da lista)
+  const limparHistorico = () => {
+    try {
+      db.prepare('DELETE FROM warns WHERE group_id = ? AND user_id = ? AND reason LIKE ?').run(gStr, uNum, cfg.warnLike);
+    } catch {}
+    try {
+      db.prepare(`DELETE FROM events WHERE group_id = ? AND user_id = ? AND ${banCond}`).run(gStr, uNum);
+    } catch {}
+  };
 
   const permCheck = await ensureBotPerm(bot, gStr, 'can_restrict_members');
   if (!permCheck.ok) {
     return { ok: false, error: 'Bot sem permissão de desbanir/restringir membros no grupo.' };
   }
 
+  // Detecta se está no grupo antes de agir
+  let status = null;
   try {
-    // unbanChatMember remove o ban e permite reentrada
+    status = (await bot.getChatMember(gStr, uNum))?.status || null;
+  } catch {}
+
+  // Banido (mesmo fora do grupo): unban libera a volta; sem unrestrict (barra fora).
+  if (status === 'kicked') {
+    try {
+      await bot.unbanChatMember(gStr, uNum, { only_if_banned: true });
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+    limparHistorico();
+    return { ok: true, msg: '🔓 Ban removido! Como está fora do grupo, a pessoa precisa entrar de novo para falar.' };
+  }
+
+  // Fora do grupo (saiu / não localizado): não há como desmutar — erro honesto, sem apagar histórico.
+  if (!status || status === 'left') {
+    return { ok: false, error: 'Usuário fora do grupo: não há como desmutar quem saiu. Ele precisa entrar de novo — histórico preservado.' };
+  }
+
+  // Dentro do grupo: remove ban residual + restaura permissões de envio
+  // (flags modernas da Bot API — o pacote antigo can_send_media_messages foi descontinuado)
+  try {
     await bot.unbanChatMember(gStr, uNum, { only_if_banned: true }).catch(() => {});
-    // Se estiver restrito, restaura permissões padrão de envio
     await bot.restrictChatMember(gStr, uNum, {
       permissions: {
         can_send_messages: true,
-        can_send_media_messages: true,
+        can_send_audios: true,
+        can_send_documents: true,
+        can_send_photos: true,
+        can_send_videos: true,
+        can_send_video_notes: true,
+        can_send_voice_notes: true,
+        can_send_polls: true,
         can_send_other_messages: true,
         can_add_web_page_previews: true,
+        can_change_info: false,
+        can_invite_users: true,
+        can_pin_messages: false,
+        can_manage_topics: false,
       },
-    }).catch(() => {});
+    });
+    limparHistorico();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };

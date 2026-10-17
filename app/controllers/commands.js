@@ -4,7 +4,6 @@ import { guard, senderIsAdmin, targetIsStaff, isAnonymousAdmin } from '../helper
 import { getProgressivoCfg } from './alfabetos.js';
 import { getSemCfg, analisarTexto, julgarNucleo } from './semantico.js';
 import { getRegrasTexto, setRegrasTexto } from '../helpers/regras.js';
-import { TOTAL_SINAIS } from '../helpers/sinais.js';
 import { statsModelo } from '../helpers/classico.js';
 import { getWhitelist } from '../helpers/whitelist.js';
 import { db } from '../../config/database.js';
@@ -185,14 +184,12 @@ export function registerCommands(bot) {
           } catch (e) { acaoTxt = `falhou: ${String(e?.message || e).slice(0, 80)}`; }
         }
       }
-      const sinaisTxt = a.sinais.motivos.length ? `${a.sinais.motivos.join('; ')} (score ${a.sinais.score})` : `score ${a.sinais.score}`;
       const linhas = [
         `🔍 Análise`,
         `Veredito: ${ehSpam ? '🚫 SPAM' : (nivel === 'baixo' ? '🟡 suspeita leve (só log)' : '✅ limpo')}`,
         `Nível: ${nivel}`,
         `Confiança: ${conf}%`,
         `Motivo: ${a.motivo || '-'}`,
-        `Sinais: ${sinaisTxt}`,
         `Ação: ${acaoTxt}`,
         `Mensagem: "${texto.slice(0, 200)}"`,
       ];
@@ -218,7 +215,7 @@ export function registerCommands(bot) {
         `\nWhitelist: ${wl.links.length} link(s), ${wl.assuntos.length} assunto(s)`;
     }
     await bot.sendMessage(msg.chat.id,
-      `🛡 Motor local: ${TOTAL_SINAIS} sinais + fastText` +
+      `🛡 Motor local: puro fastText` +
       (st ? `\nTreinado em: ${st.em.slice(0, 10)} (${st.nSpam + st.nHam} exemplos, FP no ham: ${st.fpHam})` : '\nModelo: ainda não treinado') +
       extra);
   });
@@ -237,7 +234,6 @@ export function registerCommands(bot) {
       const linhas = [
         `🔍 Análise (sem punir):`,
         `Nível: ${a.nivel ? `${a.nivel} — ${a.motivo}` : 'limpo'}`,
-        `Sinais: score ${a.sinais.score}${a.sinais.motivos.length ? ` (${a.sinais.motivos.join('; ')})` : ''}`,
         `Modelo local: ${a.ft.spam ? 'marcou' : 'não marcou'} (${Math.round(a.ft.prob * 100)}%)`,
       ];
       await bot.sendMessage(msg.chat.id, linhas.join('\n'));

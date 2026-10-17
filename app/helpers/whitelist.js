@@ -1,5 +1,6 @@
-// Whitelist compartilhada (Antispam AI + Censurar): links e assuntos permitidos furam a IA.
-// Checagem determinística ANTES da IA (economiza call) + vai no prompt como exceção.
+// Whitelist compartilhada (Antispam AI + Censurar): links e assuntos são REMOVIDOS
+// do texto antes do julgamento (replaceAll) e o juiz analisa o RESTO.
+// Se não sobrar nada, não há o que julgar → pula.
 // settings.whitelist = { links: ['dominio.com'], assuntos: ['aviso da moderação'] }
 import { db } from '../../config/database.js';
 import { DEFAULT_SETTINGS } from './defaults.js';
@@ -29,40 +30,13 @@ export function saveWhitelist(gid, wl) {
   logEvent('whitelist_change', gid, null, {});
 }
 
-function extrairDominios(texto) {
-  const t = String(texto || '').toLowerCase();
-  const out = new Set();
-  const re = /(?:https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?/gi;
-  let m;
-  while ((m = re.exec(t))) {
-    out.add(m[0].replace(/^https?:\/\//, '').replace(/\/.*$/, ''));
+export function removerWhitelist(texto, wl) {
+  let t = String(texto || '');
+  const itens = [...(wl?.links || []), ...(wl?.assuntos || [])];
+  for (const item of itens) {
+    if (item) t = t.replaceAll(item, '');
   }
-  return [...out];
-}
-
-// Retorna { permitido:bool, motivo:'' } — link OU assunto permitido libera.
-export function ehPermitido(texto, wl) {
-  const t = String(texto || '');
-  const doms = extrairDominios(t);
-  for (const d of doms) {
-    if ((wl.links || []).some((l) => d === l || d.endsWith(`.${l}`))) {
-      return { permitido: true, motivo: `link permitido: ${d}` };
-    }
-  }
-  const low = t.toLowerCase();
-  for (const a of (wl.assuntos || [])) {
-    if (a && low.includes(String(a).toLowerCase())) {
-      return { permitido: true, motivo: `assunto permitido: ${a}` };
-    }
-  }
-  return { permitido: false, motivo: '' };
-}
-
-export function trechoPrompt(wl) {
-  const partes = [];
-  if (wl.links?.length) partes.push(`Links/dominios SEMPRE permitidos (nunca sinalize por conter): ${wl.links.join(', ')}`);
-  if (wl.assuntos?.length) partes.push(`Assuntos SEMPRE permitidos (nunca sinalize): ${wl.assuntos.join(' | ')}`);
-  return partes.join('\n');
+  return t;
 }
 
 // ---- painel (Telegram) ----
@@ -73,7 +47,7 @@ export function painelWhitelist(gid) {
   const assuntos = wl.assuntos.length ? wl.assuntos.map((a, i) => `${i + 1}. ${a}`).join('\n') : '(nenhum)';
   const head =
     `👥 <b>${titulo}</b>\n\n` +
-    `✅ <b>Whitelist</b> — links e assuntos que o Antispam sempre perdoa.\n\n` +
+    `✅ <b>Whitelist</b> — links e assuntos removidos do texto antes do julgamento (o juiz analisa o resto).\n\n` +
     `🔗 <b>Links permitidos (${wl.links.length})</b>\n${links}\n\n` +
     `💬 <b>Assuntos permitidos (${wl.assuntos.length})</b>\n${assuntos}\n\n` +
     `Toque em ❌ para remover um item, ou adicione novos abaixo.`;

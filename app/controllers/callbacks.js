@@ -574,16 +574,6 @@ export function registerCallbacks(bot) {
         const p = painelSemantico(gid); await edit(p.text, p.reply_markup);
         await bot.answerCallbackQuery(q.id, { text: cfg.punir_staff ? 'Modo teste ligado.' : 'Modo teste desligado.' }).catch(() => {});
         return;
-      } else if (data.startsWith('sem_regex:')) {
-        // Chave do controle regex de texto (padrão: ativo). Desligado, valem
-        // só os metadados de link + o modelo local.
-        const gid = data.split(':')[1];
-        if (!(await canEdit(bot, q, gid))) return;
-        const cfg = getSemCfg(gid); cfg.regex = !(cfg.regex ?? true);
-        saveSemCfg(gid, cfg);
-        const p = painelSemantico(gid); await edit(p.text, p.reply_markup);
-        await bot.answerCallbackQuery(q.id, { text: `Regex texto ${cfg.regex ? 'ligado' : 'desligado'}.` }).catch(() => {});
-        return;
       } else if (data.startsWith('ai_run:')) {
         // DISPARAR: revarre os últimos 61min do buffer na hora exata.
         const gid = data.split(':')[1];
@@ -817,9 +807,9 @@ export function registerCallbacks(bot) {
         const [, gid, uid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
-        const res = await desbanirUsuario(bot, gid, uid);
+        const res = await desbanirUsuario(bot, gid, uid, motor);
         if (res.ok) {
-          await bot.answerCallbackQuery(q.id, { text: '🔓 Usuário desbanido e permissões restauradas com sucesso!', show_alert: true }).catch(() => {});
+          await bot.answerCallbackQuery(q.id, { text: res.msg || '🔓 Usuário desbanido e permissões restauradas com sucesso!', show_alert: true }).catch(() => {});
         } else {
           await bot.answerCallbackQuery(q.id, { text: `❌ Falha ao desbanir: ${res.error}`, show_alert: true }).catch(() => {});
         }
@@ -832,7 +822,7 @@ export function registerCallbacks(bot) {
         const [, gid, uid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
-        const res = await mutarUsuario(bot, gid, uid);
+        const res = await mutarUsuario(bot, gid, uid, motor);
         if (res.ok) {
           await bot.answerCallbackQuery(q.id, { text: '🔇 Usuário mutado com sucesso!', show_alert: true }).catch(() => {});
         } else {
@@ -847,7 +837,7 @@ export function registerCallbacks(bot) {
         const [, gid, uid, pagStr] = data.split(':');
         if (!(await canEdit(bot, q, gid))) return;
         const pag = parseInt(pagStr, 10) || 0;
-        const res = await banirUsuario(bot, gid, uid);
+        const res = await banirUsuario(bot, gid, uid, motor);
         if (res.ok) {
           await bot.answerCallbackQuery(q.id, { text: '🚫 Usuário banido com sucesso!', show_alert: true }).catch(() => {});
         } else {

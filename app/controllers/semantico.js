@@ -1,18 +1,16 @@
-// Antispam semântico — 0 LLM, 0 rede, 0 chave. Juiz único em 3 camadas:
-//   1) Whitelist (perdão: link/assunto permitido nem é julgado)
-//   2) Regex com pesos → baixo/médio/severo (explicável, instantâneo)
-//   3) fastText local (300 spam + 300 ham) com Bayes de reserva
-// Fusão: severo SÓ via regex; modelo entra na escada (médio) se prob>=tolerância;
-// baixo se (score>=1 OU prob>=tolerância-20, mín 30); senão limpo.
-// Punição: baixo=só registra (silencioso) | médio/severo=deleta+warn na escada
-// até a ação final. NENHUMA punição é direta — tudo passa por warn antes.
+// Antispam semântico — 0 LLM, 0 rede, 0 chave. Juiz PURO fastText local
+// (300 spam + 300 ham) com Bayes de reserva. Sem regex, sem metadados de link,
+// sem perdão de conversa: só a prob. do modelo decide.
+// Níveis: prob > modelo_min (padrão 95) = medio (+warn, escada) · prob ≥ 50 = baixo
+// (só log) · abaixo = limpo. Punição: baixo=só registra (silencioso) |
+// medio=deleta+warn na escada até a ação final. NENHUMA punição é direta.
 import { execFile } from 'node:child_process';
 import { getModule, logEvent, getGroupTitle } from '../models/group.js';
 import { ensureBotPerm, targetIsStaff, isAnonymousAdmin } from '../helpers/admin.js';
-import { analisarSinais, analisarSinaisTexto, analisarSinaisLinks, TOTAL_SINAIS, URL_RE, extrairLinks } from '../helpers/sinais.js';
+import { URL_RE, extrairLinks } from '../helpers/sinais.js';
 import { classificar, statsModelo, reload as reloadClassico, temModelo } from '../helpers/classico.js';
 import { registrarMensagem, lerJanela, marcarJulgadas, podar } from '../helpers/buffer.js';
-import { getWhitelist, saveWhitelist, ehPermitido } from '../helpers/whitelist.js';
+import { getWhitelist, saveWhitelist, removerWhitelist } from '../helpers/whitelist.js';
 import { getRegrasTexto, setRegrasTexto } from '../helpers/regras.js';
 import { getPendente, clearPendente } from '../helpers/pending.js';
 import { notificarFalha } from '../helpers/falhas.js';
@@ -164,58 +162,18 @@ function erroPunicaoAmigavel(d) {
 }
 
 // ---- análise pura (sem efeitos) — usada pelo /sinais, /analise e pelo juiz ----
-// As REGRAS (regex) mandam; o modelo local reforça E também age sozinho:
-//   - severo/médio vêm do regex (padrões fortes).
-//   - score>=1: o modelo ESCALA p/ médio se concordar; senão baixo.
-//   - score==0: o modelo sozinho decide — pct>tolerância → médio; pct>=50 → baixo.
-// Salvaguarda para mensagens benignas frequentes e avisos de membros sobre golpes
-function ehAvisoOuConversaLegitima(texto) {
-  const low = String(texto || '').trim().toLowerCase();
-  // Valores numéricos ou monetários isolados (ex: "R$ 121.400", "R$ 50,00", "$100", "50 reais", ou número único com até 1 separador de milhar/decimal como "121.400" ou "1.500")
-  if (/^(?:r\$|us\$|\$|€)\s*[0-9.,]+$/i.test(low)) return true;
-  if (/^[0-9.,]+\s*(?:reais|dolares|dólares|euros)$/i.test(low)) return true;
-  if (/^[0-9]+(?:[.,][0-9]{1,3})?$/i.test(low)) return true;
-  if (/fake.*(ad|giveaway)|falso.*(anuncio|sorteio)|golpe.*(cuidado|don't|be careful)|cuidado.*golpe/i.test(low)) return true;
-  if (/enem\.inep\.gov\.br|rastreamento\.correios\.com\.br/i.test(low)) return true;
-  if (/sem correntes e sem propaganda/i.test(low)) return true;
-  if (/(ganhou|empatou|gan[oó]|empat[oó])\s+(de\s+novo|de\s+nuevo)/i.test(low)) return true;
-  if (/d[aá] pra consultar o cpf|puedes comprobar el cpf|can you check the cpf/i.test(low)) return true;
-  if (/renovar.*cnh|renew.*cnh/i.test(low)) return true;
-  if (/tarjeta de registro de votante|voter (registration )?card/i.test(low)) return true;
-  if (/income tax on.*(cell )?phone/i.test(low)) return true;
-  if (/pip install -r requirements\.txt/i.test(low)) return true;
-  if (/supports? http\/2/i.test(low)) return true;
-  return false;
-}
-
 export function analisarTexto(texto, cfg = {}) {
-  const tol = cfg.tolerancia ?? cfg.tolerancia_warn ?? 65;
-  // Chave "Regex": desligada, os padrões de TEXTO somem — ficam só os metadados
-  // de link (sempre ativos) + o modelo local.
-  const t = cfg.regex === false ? { score: 0, motivos: [] } : analisarSinaisTexto(texto);
-  const l = analisarSinaisLinks(texto);
-  const score = t.score + l.score;
-  const motivos = [...t.motivos, ...l.motivos];
-  const sinais = { score, nivel: score >= 6 ? 'severo' : score >= 3 ? 'medio' : score >= 1 ? 'baixo' : null, motivos, links: l.links };
+  // PURO fastText: só a prob. do modelo local decide. Sem regex de texto,
+  // sem metadados de link, sem perdão de conversa legítima.
+  // (sinais mantido zerado no retorno p/ compat com /sinais e logs.)
+  const sinais = { score: 0, nivel: null, motivos: [], links: [] };
   let ft = { origem: 'off', prob: 0, spam: false };
   try { ft = classificar(texto); } catch { ft = { origem: 'off', prob: 0, spam: false }; }
   const pct = Math.round(ft.prob * 100);
+  const tol = cfg.tolerancia ?? 65;
   let nivel = null;
   let motivo = '';
-
-  if (ehAvisoOuConversaLegitima(texto)) {
-    return { sinais, ft, nivel: null, motivo: '' };
-  }
-
-  if (sinais.nivel === 'severo' || sinais.nivel === 'medio') {
-    // o modelo VETA falso positivo do regex (ex.: aviso "não cliquem… é phishing",
-    // cidade "Betim"): se ele tem certeza que é ham (pct baixo), vira só log (🟡).
-    if (pct < 15) { nivel = 'baixo'; motivo = sinais.motivos[0]; }
-    else { nivel = sinais.nivel; motivo = sinais.motivos[0]; }
-  } else if (sinais.score >= 1) {
-    if (pct > tol) { nivel = 'medio'; motivo = sinais.motivos[0] || 'conteúdo suspeito'; }
-    else { nivel = 'baixo'; motivo = sinais.motivos[0] || 'sinal fraco'; }
-  } else if (pct > (cfg.modelo_min ?? 95)) {
+  if (pct > tol) {
     nivel = 'medio'; motivo = 'conteúdo suspeito';
   } else if (pct >= 50) {
     nivel = 'baixo'; motivo = 'suspeita leve';
@@ -236,14 +194,14 @@ export function painelSemantico(gid) {
   const head =
     `👥 <b>${titulo}</b>\n\n` +
     `🛡 <b>Antispam</b> — ${onOff(cfg.enabled)}\n` +
-    `Motor local: ${TOTAL_SINAIS} sinais + fastText. ${motor}\n` +
+    `Motor local: puro fastText. ${motor}\n` +
     `Critério: suas 📜 regras. Perdão: ✅ whitelist.\n\n` +
     `📜 <b>Regras</b>\n${previa}\n\n` +
     `📌 <b>Hoje</b>\n` +
     `└ Varredura: ${onOff(cfg.enabled)} (tempo real, a cada mensagem)\n` +
     `└ Níveis: 🟡 log · 🟠🔴 deletar+warn (até ${cfg.max_warns}x, sem direto)\n` +
     `└ Tolerância: modelo só conta ≥${cfg.tolerancia ?? 65}%\n` +
-    `└ Regex texto: ${onOff(cfg.regex ?? true)} (links sempre analisados)\n` +
+    `└ Julgamento: só o modelo fastText (médio ≥${cfg.tolerancia ?? 65}% · leve ≥50%)\n` +
     `└ Mínimo chars: ${cfg.minimo_chars > 0 ? `${cfg.minimo_chars} (exceções: @=${onOffCurto(cfg.ignorar_min_arroba)}, link=${onOffCurto(cfg.ignorar_min_link)})` : 'Desativado'}\n` +
     `└ Na última: ${FINAL_LABEL[cfg.acao_final]}\n` +
     `└ Aviso no grupo: ${onOff(cfg.avisar_no_grupo)} | Teste c/ admins: ${onOff(cfg.punir_staff)}\n` +
@@ -257,8 +215,7 @@ export function painelSemantico(gid) {
      { text: `${cfg.warn ? '✅' : '⬜'} Warn`, callback_data: `ai_warn:${gid}` }],
     [{ text: `🧪 Admin no teste: ${onOffCurto(cfg.punir_staff)}`, callback_data: `ai_staff:${gid}` },
      { text: `🎚 Tolerância: ${cfg.tolerancia ?? 65}%`, callback_data: `sem_tol:${gid}` }],
-    [{ text: `${(cfg.regex ?? true) ? '✅' : '⬜'} Regex texto`, callback_data: `sem_regex:${gid}` },
-     { text: `📏 Mín. Caracteres: ${cfg.minimo_chars > 0 ? cfg.minimo_chars : 'Off'}`, callback_data: `sem_min:${gid}` }],
+    [{ text: `📏 Mín. Caracteres: ${cfg.minimo_chars > 0 ? cfg.minimo_chars : 'Off'}`, callback_data: `sem_min:${gid}` }],
     [{ text: `✅ Whitelist: ${wl.links.length} links, ${wl.assuntos.length} assuntos`, callback_data: `wl:${gid}` }],
     [{ text: `👥 Warns & Bans (Antispam)`, callback_data: `usr_sem_open:${gid}` }],
     [{ text: '⬅️ Voltar', callback_data: `open:${gid}` }],
@@ -351,21 +308,19 @@ export async function julgarNucleo(bot, gid, titulo, mid, uid, arroba, texto, cf
   // Trecho + ação detalhada: só no privado (DM) e no log dos ADMs.
   const sitMsg = deletou ? 'mensagem apagada' : (cfg.deletar ? 'NÃO apagada (bot sem permissão?)' : 'mensagem mantida');
   const conf = Math.round((a.ft?.prob || 0) * 100);
-  // Deixa claro de ONDE veio o nível: regras (score) e/ou modelo local.
-  const sinaisTxt = a.sinais?.motivos?.length ? `${a.sinais.motivos.join('; ')} (score ${a.sinais.score})` : `score ${a.sinais?.score ?? 0}`;
   if (!silencioso && cfg.avisar_no_grupo) {
     try {
       await bot.sendMessage(gid, `${em} ${arroba}\nMotivo: ${a.motivo}\nAção feita: ${sitMsg}${contaTxt ? `\n${contaTxt}` : ''}`);
     } catch {}
   }
   const espelhou = await logNoGrupoADM(bot, { log_no_admin_grupo: cfg.log_no_admin_grupo, admin_grupo_id: getAdminGrupo(gid) },
-    `${em} <b>Antispam</b> (${a.nivel})\nGrupo: ${esc(titulo)} (<code>${gid}</code>)\nUsuário: ${esc(arroba)} [<code>${uid}</code>]\nMotivo: ${esc(a.motivo)}\nSinais (regras): ${esc(sinaisTxt)}\nModelo local: ${conf}%\nMensagem: "${esc(previa)}"\nAção: <b>${esc(acao)}</b> (${esc(sitMsg)})`);
+    `${em} <b>Antispam</b> (${a.nivel})\nGrupo: ${esc(titulo)} (<code>${gid}</code>)\nUsuário: ${esc(arroba)} [<code>${uid}</code>]\nMotivo: ${esc(a.motivo)}\nModelo local: ${conf}%\nMensagem: "${esc(previa)}"\nAção: <b>${esc(acao)}</b> (${esc(sitMsg)})`);
   if (!espelhou && a.nivel !== 'baixo') {
     try {
       const adms = await bot.getChatAdministrators(gid);
       for (const x of adms) {
         if (x?.user && !x.user.is_bot) {
-          try { await bot.sendMessage(x.user.id, `${em} Antispam (${a.nivel})\nGrupo: ${titulo}\nUsuário: ${arroba} [${uid}]\nMotivo: ${a.motivo}\nSinais (regras): ${sinaisTxt}\nModelo local: ${conf}%\nMensagem: "${previa}"\nAção: ${acao} (${sitMsg})`); } catch {}
+          try { await bot.sendMessage(x.user.id, `${em} Antispam (${a.nivel})\nGrupo: ${titulo}\nUsuário: ${arroba} [${uid}]\nMotivo: ${a.motivo}\nModelo local: ${conf}%\nMensagem: "${previa}"\nAção: ${acao} (${sitMsg})`); } catch {}
         }
       }
     } catch {}
@@ -387,15 +342,17 @@ export async function julgarMensagem(bot, msg) {
     const staff = await ehStaff(bot, msg);
     if (staff && !cfg.punir_staff) return;
     const wl = getWhitelist(gid);
-    if (ehPermitido(texto, wl).permitido) { marcarJulgadas(gid, [msg.message_id]); return; }
+    // Whitelist: remove os itens do texto e julga o RESTO (vazio = nada a julgar).
+    const textoJulgar = removerWhitelist(texto, wl);
+    if (!textoJulgar.trim()) { marcarJulgadas(gid, [msg.message_id]); return; }
 
-    // Filtro de Mínimo de Caracteres:
+    // Filtro de Mínimo de Caracteres (mede o resto, sem o boilerplate da whitelist):
     // Não considera quebras de linha (\r\n / \n) na contagem de caracteres.
     // Se a mensagem for menor que minimo_chars, só é analisada se tiver @ (com exceção de @ ativa) ou link (com exceção de link ativa).
-    const lenSemQuebras = texto.replace(/\r?\n/g, '').length;
+    const lenSemQuebras = textoJulgar.replace(/\r?\n/g, '').length;
     if (cfg.minimo_chars > 0 && lenSemQuebras < cfg.minimo_chars) {
-      const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(texto);
-      const temLink = cfg.ignorar_min_link && (URL_RE.test(texto) || extrairLinks(texto).length > 0);
+      const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(textoJulgar);
+      const temLink = cfg.ignorar_min_link && (URL_RE.test(textoJulgar) || extrairLinks(textoJulgar).length > 0);
       URL_RE.lastIndex = 0;
       if (!temArroba && !temLink) {
         marcarJulgadas(gid, [msg.message_id]);
@@ -404,7 +361,7 @@ export async function julgarMensagem(bot, msg) {
     }
 
     const arroba = msg.from.username ? `@${msg.from.username}` : (msg.from.first_name || msg.from.id);
-    await julgarNucleo(bot, gid, msg.chat.title || gid, msg.message_id, Number(msg.from.id), arroba, texto, cfg, false);
+    await julgarNucleo(bot, gid, msg.chat.title || gid, msg.message_id, Number(msg.from.id), arroba, textoJulgar, cfg, false);
     marcarJulgadas(gid, [msg.message_id]);
   } catch (e) {
     console.error('[semantico]', e.message);
@@ -427,17 +384,18 @@ export async function varreduraGrupo(bot, gid) {
   let ignoradas = 0, n = 0;
   for (const m of lote) {
     try {
-      if (ehPermitido(m.texto, wl).permitido) continue;
+      const textoJulgar = removerWhitelist(m.texto, wl);
+      if (!textoJulgar.trim()) continue;
       const staff = await ehStaff(bot, { chat: { id: gid }, from: { id: m.user_id } }).catch(() => false);
       if (staff && !cfg.punir_staff) { ignoradas++; continue; }
-      const lenSemQuebras = String(m.texto || '').replace(/\r?\n/g, '').length;
+      const lenSemQuebras = String(textoJulgar || '').replace(/\r?\n/g, '').length;
       if (cfg.minimo_chars > 0 && lenSemQuebras < cfg.minimo_chars) {
-        const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(m.texto);
-        const temLink = cfg.ignorar_min_link && (URL_RE.test(m.texto) || extrairLinks(m.texto).length > 0);
+        const temArroba = cfg.ignorar_min_arroba && /@[a-z0-9_]{3,}/i.test(textoJulgar);
+        const temLink = cfg.ignorar_min_link && (URL_RE.test(textoJulgar) || extrairLinks(textoJulgar).length > 0);
         URL_RE.lastIndex = 0;
         if (!temArroba && !temLink) continue;
       }
-      const r = await julgarNucleo(bot, gid, titulo, Number(m.message_id), Number(m.user_id), `id:${m.user_id}`, m.texto, cfg, true);
+      const r = await julgarNucleo(bot, gid, titulo, Number(m.message_id), Number(m.user_id), `id:${m.user_id}`, textoJulgar, cfg, true);
       if (r.nivel && r.nivel !== 'baixo') { n++; porNivel[r.nivel] = (porNivel[r.nivel] || 0) + 1; }
       else if (r.nivel === 'baixo') { porNivel.baixo = (porNivel.baixo || 0) + 1; }
     } catch (e) { console.error('[semantico:disparo]', e.message); }
