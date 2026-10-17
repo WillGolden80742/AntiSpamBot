@@ -61,3 +61,13 @@ CREATE TABLE IF NOT EXISTS events (
   created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_group ON events(group_id, created_at);
+
+-- Cache de perfis de usuários conhecidos (username, nomes)
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY,
+  username      TEXT,
+  first_name    TEXT,
+  last_name     TEXT,
+  atualizado_em DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);

@@ -10,6 +10,7 @@ import { getWhitelist, painelWhitelist, removerWlItem } from '../helpers/whiteli
 import { getRegrasTexto } from '../helpers/regras.js';
 import { getProgressivoCfg, ALFA_NOME, EXCETO_KEYS, normExcecoes, normSelecao, selecaoAtiva } from './alfabetos.js';
 import { getSemCfg, saveSemCfg, painelSemantico, painelTolerancia, painelTolNumeros, painelMinChars, varreduraGrupo } from './semantico.js';
+import { painelListaUsuarios, painelDetalhesUsuario, zerarWarnsUsuario, desbanirUsuario } from './usuarios.js';
 import { db } from '../../config/database.js';
 
 const META = {
@@ -726,6 +727,55 @@ export function registerCallbacks(bot) {
         if (!(await canEdit(bot, q, gid))) return;
         removerWlItem(gid, 'assunto', idx);
         const p = painelWhitelist(gid); await edit(p.text, p.reply_markup);
+        return;
+      } else if (data.startsWith('usr_list:')) {
+        const [, gid, pagStr] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const pag = parseInt(pagStr, 10) || 0;
+        const p = painelListaUsuarios(gid, pag, '');
+        await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id).catch(() => {});
+        return;
+      } else if (data.startsWith('usr_search:')) {
+        const gid = data.split(':')[1];
+        if (!(await canEdit(bot, q, gid))) return;
+        setPendente(q.message.chat.id, q.from.id, { gid, tipo: 'buscar_usuario' });
+        await bot.sendMessage(
+          q.message.chat.id,
+          '🔍 Envie o <b>@username</b>, <b>nome</b> ou <b>ID numérico</b> do usuário que deseja pesquisar.\nDigite "cancelar" para desistir.',
+          { parse_mode: 'HTML' }
+        );
+        await bot.answerCallbackQuery(q.id).catch(() => {});
+        return;
+      } else if (data.startsWith('usr_view:')) {
+        const [, gid, uid, pagStr] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const pag = parseInt(pagStr, 10) || 0;
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag);
+        await edit(p.text, p.reply_markup);
+        await bot.answerCallbackQuery(q.id).catch(() => {});
+        return;
+      } else if (data.startsWith('usr_del_warns:')) {
+        const [, gid, uid, pagStr] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const pag = parseInt(pagStr, 10) || 0;
+        const qtd = zerarWarnsUsuario(gid, uid);
+        await bot.answerCallbackQuery(q.id, { text: `✅ ${qtd} advertência(s) zerada(s) com sucesso!`, show_alert: true }).catch(() => {});
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag);
+        await edit(p.text, p.reply_markup);
+        return;
+      } else if (data.startsWith('usr_unban:')) {
+        const [, gid, uid, pagStr] = data.split(':');
+        if (!(await canEdit(bot, q, gid))) return;
+        const pag = parseInt(pagStr, 10) || 0;
+        const res = await desbanirUsuario(bot, gid, uid);
+        if (res.ok) {
+          await bot.answerCallbackQuery(q.id, { text: '🔓 Usuário desbanido e permissões restauradas com sucesso!', show_alert: true }).catch(() => {});
+        } else {
+          await bot.answerCallbackQuery(q.id, { text: `❌ Falha ao desbanir: ${res.error}`, show_alert: true }).catch(() => {});
+        }
+        const p = await painelDetalhesUsuario(bot, gid, uid, pag);
+        await edit(p.text, p.reply_markup);
         return;
       }
       await bot.answerCallbackQuery(q.id).catch(() => {});

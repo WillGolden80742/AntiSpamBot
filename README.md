@@ -255,7 +255,10 @@ Punição (`julgarNucleo`): `baixo` = só `events(sem_log)`, silencioso. `médio
 
 ### Painéis inline (`callbacks.js`)
 
-`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] [✅ Concluir]` → Alfabetos: submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, `🖼 Ler imagens` (OCR Tesseract para fotos/imagens/stickers), testar com admins. Antispam (`painelSemantico`): liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Mínimo de Caracteres` (desativado/10..100 com exceções `@` e link), `Tolerância` (50/65/80 + grade 10–90), ✅/⬜ `Regex texto` (padrão ligado; desligado = só links + modelo), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar. Sem botão de varredura nem de retreino no painel atual (handlers `ai_run:` e `sem_treinar:` existiam para mensagens antigas; `sem_treinar:` foi removido do código e o comando `/retreinar` também — retreino só via CLI no servidor). Callbacks legados ainda atendidos: `ab_set:` (submenu antigo de escolha única) e `mod:` (hub antigo).
+`CONFIGURAÇÕES → [🔤 Alfabetos] [🛡 Antispam] | [👥 Usuários (Warns & Bans)] | [✅ Concluir]`
+- **Alfabetos:** submenu por escrita (4 flags) + `Não ocidental libera:` (5 exceções) + passo a passo ON/OFF, avisos 2–5, ação final ban→mute→deletar, aviso no grupo, registro ADM, `🖼 Ler imagens` (OCR Tesseract para fotos/imagens/stickers), testar com admins.
+- **Antispam (`painelSemantico`):** liga/desliga, avisos 2–5, Final, aviso no grupo, toggles Deletar/Warn, admin no teste, `Mínimo de Caracteres` (desativado/10..100 com exceções `@` e link), `Tolerância` (50/65/80 + grade 10–90), ✅/⬜ `Regex texto` (padrão ligado; desligado = só links + modelo), `Whitelist` (links/assuntos + add/remove), regras (ver/editar via `pending.js`), voltar.
+- **Usuários (`painelListaUsuarios`):** lista e cicla usuários ativos/advertidos/punidos com paginação (`⬅️ Anterior` / `Próxima ➡️`), exibe badges de advertências (`⚠️ X`) e banimentos (`🚫 Y`), botão de busca (`🔍 Pesquisar`) por `@username`, nome ou ID numérico. Ao selecionar um usuário, exibe seu status live no Telegram, histórico recente de warns/bans e botões para **Zerar Warns** e **Desbanir / Desmutar** (`unbanChatMember` + restauração de permissões).
 
 ---
 
@@ -269,6 +272,7 @@ settings(group_id, module, data JSON, updated_at) PK(group_id,module)
 warns(id AI PK, group_id, user_id, reason, created_at)       -- reason 'alfabeto:*' ou 'sem:*'
 messages_log(group_id, message_id, user_id, texto, criado_em, julgado_em) PK(group_id,message_id)
 events(id AI PK, kind, group_id, user_id, meta JSON, created_at)
+users(id PK, username, first_name, last_name, atualizado_em) -- cache de perfis conhecidos
 ```
 
 Módulos em `settings.data`: `alfabetos` (7 seleções + progressivo/max/ação final/aviso/log ADM/grupo ADM/modo teste/ler_imagens) · `semantico` (enabled/deletar/warn/avisar/max_warns/acao_final/log/staff/tolerância/modelo_min/regex/minimo_chars/ignorar_min_arroba/ignorar_min_link) · `regras` (texto) · `whitelist` (links/assuntos) · `acesso` (autorizado/adicionado_por/em). Adoção automática de legados: `antispam_ai→semantico` (`getSemCfg`), `censurar→regras` (`getRegrasTexto`).
